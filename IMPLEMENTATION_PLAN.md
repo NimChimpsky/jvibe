@@ -1,191 +1,123 @@
 # jvibe Implementation Plan
 
-## 1. Project Summary
+## 1. Product Summary
 
-`jvibe` is a Java-based LLM coding agent with both desktop GUI and CLI entry points. It should provide Codex/Claude Code style workflows while leaning into the JVM ecosystem: Java-native tooling, Gradle builds, JVM process control, Git integration, JavaFX UI, and future support for JMX, JFR, profiling, and runtime diagnostics.
+`jvibe` is a Java-based LLM coding agent with shared CLI and JavaFX GUI runtimes. It should provide a Codex/Claude Code style workflow while leaning into the JVM ecosystem: Java-native tooling, Gradle builds, JVM process control, Git integration, dynamic Java plugins, and future JMX/JFR/profiling support.
 
 Primary deliverables:
 
-- `jvibe.jar`: JavaFX desktop application.
-- `jvibe-cli.jar`: command-line application.
-- Shared core runtime used by both GUI and CLI.
-- Extensible tool architecture for shell, file editing, Git, provider APIs, JVM-specific tools, and agent-created dynamic Java tools.
+- `jvibe-cli.jar`: command-line coding agent.
+- `jvibe.jar`: JavaFX desktop app.
+- Shared core runtime used by both entry points.
+- Built-in tools for shell, files, Git, config, and dynamic tool management.
+- Agent-created Java tools that can be compiled, loaded, approved, and used without rebuilding jvibe.
 
-## 2. Source Requirements
+MVP principle:
 
-The initial requirements are captured in `jvibe-plan.md`.
+- Build the CLI and core runtime first.
+- Keep the GUI thin over the same core runtime.
+- Make dynamic Java tools foundational, before advanced JVM diagnostics.
+- Defer autonomous long-running tasks, JMX/JFR/profiling, PR creation, and native installers until after MVP.
 
-Core requirements:
+## 2. Decisions And Constraints
 
-- Java implementation.
-- Gradle build system.
-- Avaje dependencies for injection, config, JSON, and logging.
-- JavaFX GUI.
-- GUI should resemble the OpenAI Codex app workflow.
-- CLI and GUI share the same core dependencies and architecture.
-- MVC-style separation for UI, state, and business logic.
-- User-home configuration with first-run defaults.
-- OpenAI and Anthropic API key configuration.
-- Shell access implemented through JVM process APIs.
-- File editing implemented through JVM file APIs.
-- Git integration for common operations, especially commit and push.
-- Slash commands inspired by aider, opencode, Claude Code, Codex, and Cline.
-- Long-term extensibility for autonomous work, long-running tasks, JMX, JFR, profiling, and JVM diagnostics.
-- Agent-created tools that can be compiled, registered, loaded, and used without rebuilding the core agent.
+### Language, Runtime, And Build
 
-## 3. Key Concerns And Open Decisions
+- Use Java 21 as the target runtime and Gradle toolchain, even if newer JDKs are installed locally.
+- Use Gradle multi-module build.
+- Generate and commit the Gradle wrapper.
+- Use Avaje Inject, Config, Jsonb, and logging.
+- Use JavaFX for GUI.
+- Use JUnit 5 and Mockito for tests.
+- Use JDK `HttpClient` initially for provider HTTP calls.
+- Use shell `git` behind a `GitService` abstraction for MVP.
+- Consider JGit, picocli, RichTextFX, and OkHttp only if implementation friction justifies them.
 
-### 3.1 Scope Risk
+### Safety Model
 
-The requested product spans a CLI agent, desktop app, provider integrations, tool runtime, autonomous task system, Git workflows, config management, and JVM diagnostics. Building all of that at once is too broad for a reliable first release.
+- Shell, file, Git, and dynamic tool actions go through central approval policy.
+- GUI requires approval for shell, file writes, Git commits/pushes, first dynamic tool execution, and new dynamic tool dependencies.
+- CLI requires approval by default, with an explicit `--yes` option for trusted workflows.
+- Dynamic Java tools are trusted code after approval, not sandboxed code.
+- Approved plugin tools get broad core access through `ToolPluginContext`.
+- Secrets must never be printed in logs, session files, tool output summaries, or error messages.
 
-Decision:
+### GitHub State
 
-- Ship an MVP around chat, tool calls, shell/file/Git, config, and one provider first.
-- Add the JavaFX app early, but keep it thin over the shared core.
-- Treat JVM diagnostics, autonomous long tasks, and advanced slash commands as post-MVP unless needed to prove the architecture.
+- Local Git repository is already initialized on `main`.
+- GitHub remote is still pending.
+- To push, add a supplied remote URL as `origin` and run `git push -u origin main`.
 
-### 3.2 Provider Abstraction
+## 3. Repository And Module Layout
 
-OpenAI and Anthropic APIs differ in request/response schema, streaming format, tool calling, model naming, and usage reporting.
-
-Decision:
-
-- Define an internal provider-neutral model for messages, tool calls, streaming events, errors, and usage.
-- Implement OpenAI first.
-- Add Anthropic after the core agent loop is stable.
-
-### 3.3 Tool Safety
-
-Shell access and file editing are powerful and risky. The plan currently says "use JVM", but does not define confirmation, sandboxing, cwd boundaries, command timeouts, or audit history.
-
-Decision:
-
-- Every tool call must run through a central `ToolExecutor`.
-- Shell commands get timeouts, working directory tracking, stdout/stderr capture, and cancellation.
-- File edits must be reviewable before write in the GUI and logged in the CLI.
-- Destructive Git/file operations require explicit confirmation unless the user opts into an unsafe mode.
-
-### 3.4 JavaFX Packaging
-
-JavaFX is no longer bundled with the JDK. Packaging runnable jars requires a deliberate Gradle setup.
-
-Decision:
-
-- Use Gradle application plugins and JavaFX plugin support.
-- Produce two runnable artifacts: GUI and CLI.
-- Do not target native installers, DMGs, or EXEs in v1.
-- Document the required Java version clearly.
-
-### 3.5 Dynamic Tool Execution
-
-Agent-created tools are a key product feature, but dynamic JVM code loading is a major trust and reliability boundary. A tool created by the agent should become available immediately without rebuilding the core app, while still giving the user control over first execution, dependencies, and disabled tools.
-
-Decision:
-
-- Treat v1 dynamic Java tools as trusted code after approval, not as sandboxed code.
-- Load each compiled tool with an isolated per-tool classloader.
-- Use a `tool.json` manifest with id, version, plugin API version, entry class, input schema, permissions, dependencies, and status.
-- Support hot registration/reload in the active session after successful compile and manifest validation.
-- Give approved plugins broad access to core services through `ToolPluginContext`; this is a power-user feature, not a sandbox boundary.
-- Require user approval before first execution of a newly-created tool.
-- Require user approval before building a tool that adds new Maven dependencies.
-- Isolate tool failures so compile, load, or runtime errors disable the tool without crashing the agent.
-
-### 3.6 "Codex-like GUI" Ambiguity
-
-"Replicate the OpenAI Codex app GUI" needs to be interpreted carefully. The goal should be workflow familiarity, not copying private implementation details or visual assets.
-
-Decision:
-
-- Build a similar functional layout: project/workspace panel, chat transcript, prompt composer, model selector, tool activity panel, file diff/review area, and settings.
-- Use original styling.
-
-### 3.7 GitHub Push Workflow
-
-The local folder is not currently a Git repository. GitHub CLI is not installed in this environment, so pushing to GitHub needs either:
-
-- A remote repository URL supplied by the user.
-- GitHub CLI installed/configured.
-- A GitHub connector/API flow that can create repos, if available.
-
-Decision:
-
-- Initialize the local repo now.
-- Commit the planning baseline.
-- Add/push remote once a GitHub repo URL is available.
-
-## 4. Target Architecture
-
-Use a layered architecture with shared core logic and thin UI adapters.
+Target Gradle modules:
 
 ```text
-jvibe-root
-  app-gui          JavaFX desktop application
-  app-cli          CLI application
-  core             agent loop, sessions, providers, tools, config, Git, plugin API
-  testing          shared test fixtures and integration test helpers
+jvibe-root/
+  settings.gradle.kts
+  build.gradle.kts
+  gradlew
+  gradlew.bat
+  gradle/
+  core/
+  app-cli/
+  app-gui/
+  testing/
 ```
 
-Recommended Gradle modules:
+Module responsibilities:
 
-- `:core`
-- `:app-cli`
-- `:app-gui`
-- `:testing`
+- `core`: agent loop, provider abstraction, tools, dynamic tool registry, config, sessions, Git service, approval policy, event model.
+- `app-cli`: CLI entry point, interactive REPL, slash commands, terminal prompts, CLI rendering.
+- `app-gui`: JavaFX entry point, view models/controllers, chat UI, tool approval UI, settings, history.
+- `testing`: shared fixtures for temp workspaces, fake providers, mock tool calls, temp Git repos, and dynamic tool test bundles.
 
-The GUI and CLI should never duplicate agent behavior. They should both call the same core services.
+Core package groups:
 
-## 5. Core Domain Model
+- `com.jvibe.agent`
+- `com.jvibe.config`
+- `com.jvibe.events`
+- `com.jvibe.git`
+- `com.jvibe.provider`
+- `com.jvibe.session`
+- `com.jvibe.tool`
+- `com.jvibe.tool.dynamic`
+- `com.jvibe.workspace`
 
-Initial domain types:
+## 4. Core Domain Model
 
-- `AgentSession`: active conversation plus workspace state.
-- `Conversation`: ordered messages, tool calls, tool results, usage.
-- `Message`: role, content parts, metadata.
-- `ProviderClient`: abstraction over OpenAI, Anthropic, and future providers.
-- `ModelDescriptor`: provider, model id, context limits, tool support.
-- `ToolDefinition`: name, description, JSON schema, executor.
-- `ToolCall`: provider-neutral tool invocation.
-- `ToolResult`: success/failure payload, logs, metadata.
-- `DynamicToolRegistry`: discovers, validates, loads, reloads, disables, and exposes dynamic tools.
-- `ToolPlugin`: Java plugin contract implemented by dynamically-loaded tools.
-- `ToolManifest`: parsed `tool.json` metadata for dynamic tool bundles.
-- `ToolPluginContext`: public service registry exposed to trusted plugin tools.
-- `Workspace`: root directory, config, Git state.
-- `JvibeConfig`: user-level config loaded from home directory.
+Initial core types:
 
-## 6. Technology Choices
+- `AgentSession`: active conversation, workspace, selected model, available tools, approval state.
+- `AgentRunner`: owns the request/tool-call loop for one session.
+- `AgentEvent`: streaming event emitted to CLI/GUI.
+- `Conversation`: ordered messages, tool calls, tool results, usage, timestamps.
+- `Message`: role, content parts, provider metadata.
+- `ProviderClient`: provider-neutral LLM interface.
+- `ProviderRequest`: messages, model, available tools, system prompt, generation options.
+- `ProviderEvent`: assistant delta, tool call, usage, error, completion.
+- `ModelDescriptor`: provider, model id, display name, context limits, tool support.
+- `ToolDefinition`: name, description, JSON schema, approval policy, executor binding.
+- `ToolCall`: id, name, JSON arguments, source provider metadata.
+- `ToolResult`: id, success flag, structured payload, stderr/log summary, error metadata.
+- `ToolExecutor`: built-in or dynamic executor interface.
+- `ApprovalRequest`: action type, risk level, summary, details, requested permissions.
+- `Workspace`: root path, Git status, jvibe workspace metadata.
+- `JvibeConfig`: user-level config.
 
-### Required
+Dynamic tool types:
 
-- Java 21 LTS.
-- Gradle.
-- JavaFX for GUI.
-- Avaje Inject.
-- Avaje Config.
-- Avaje Jsonb.
-- Avaje SLF4J/logging integration.
-- JUnit 5.
-- Mockito.
+- `DynamicToolRegistry`: discovers, validates, builds, loads, reloads, disables, and publishes dynamic tools.
+- `ToolManifest`: parsed `tool.json`.
+- `ToolPlugin`: Java plugin contract implemented by dynamic tools.
+- `ToolPluginContext`: broad service registry available to approved plugins.
+- `ToolBuildService`: compiles simple tools with `javac` and dependency-backed tools with Gradle.
+- `ToolClassLoaderFactory`: creates isolated per-tool classloaders.
+- `ToolApprovalStore`: tracks first-run approval and dependency approval.
 
-### Dependencies To Evaluate
+## 5. Configuration And Persistence
 
-Only add these if they materially reduce risk:
-
-- JGit for Git operations.
-- picocli for CLI parsing.
-- RichTextFX or CodeArea-style component for GUI code/diff rendering.
-- OkHttp or Java 21 `HttpClient` for provider APIs.
-
-Default preference:
-
-- Use JDK APIs first where reasonable.
-- Add mature libraries where hand-rolling would create protocol, parsing, terminal, or UI risk.
-
-## 7. Configuration Design
-
-Config directory:
+User config directory:
 
 ```text
 ~/.jvibe/
@@ -198,127 +130,116 @@ Config directory:
   logs/
 ```
 
-Workspace tool directory:
+Workspace metadata:
 
 ```text
 <workspace>/.jvibe/
   tools/
+  state.json
 ```
 
 First-run behavior:
 
 - Create `~/.jvibe` if missing.
-- Write default config.
-- Write default system prompt.
-- Create empty provider config.
-- Do not create placeholder API keys that look valid.
+- Write default `config.json`.
+- Write default `prompts/system.md`.
+- Write empty `providers.json`.
+- Create empty `sessions`, `tools`, and `logs` directories.
+- Do not create fake or placeholder API keys.
 
-API key handling:
+Provider key precedence:
 
-- Prefer environment variables first.
-- Support local config references.
-- Avoid printing secrets in logs.
+1. Environment variables, for example `OPENAI_API_KEY` and `ANTHROPIC_API_KEY`.
+2. User provider config references.
+3. GUI/CLI setup prompts.
+
+Secrets policy:
+
+- Never store plaintext secrets in sessions.
+- Redact likely secret values in logs and tool output.
 - Consider macOS Keychain support after MVP.
 
-## 8. Provider Integration Plan
+Session persistence:
 
-### MVP Provider
+- Store sessions as JSON under `~/.jvibe/sessions/{session-id}.json`.
+- Persist workspace path, selected provider/model, messages, tool calls, tool results, usage, timestamps, and approval decisions.
+- Do not persist dynamic tool source inside sessions; persist references to tool ids and versions.
 
-Implement OpenAI first:
+## 6. Provider Integration
 
-- Chat/completions style request abstraction based on current API choice.
-- Streaming responses.
-- Tool call emission.
-- Usage tracking.
-- Retry handling for transient failures.
-- Clear error mapping for auth, model access, rate limits, quota, and network errors.
+Implement OpenAI first, Anthropic second.
 
-### Second Provider
-
-Add Anthropic once the provider-neutral event model is proven.
-
-Provider interface:
+Provider contract:
 
 ```java
-interface LlmProvider {
-  Stream<AgentEvent> stream(ProviderRequest request);
+interface ProviderClient {
+  Stream<ProviderEvent> stream(ProviderRequest request);
   List<ModelDescriptor> models();
 }
 ```
 
-## 9. Agent Loop
+OpenAI MVP:
 
-The core loop should support:
-
-- User prompt.
-- Model request.
 - Streaming assistant output.
-- Tool call detection.
-- Tool execution.
-- Tool result return to model.
-- Final assistant response.
-- Cancellation.
-- Session persistence.
+- Provider-native tool call mapping into `ToolCall`.
+- Usage tracking where available.
+- Error mapping for authentication, model access, quota, rate limits, malformed requests, and network failures.
+- Retry transient network and 5xx errors with bounded backoff.
 
-MVP loop constraints:
+Anthropic follow-up:
 
-- One active task at a time per session.
-- Bounded tool-call recursion.
-- Max iteration limit.
-- Tool timeout support.
-- Full event log for debugging.
+- Implement after OpenAI loop and tool-call model are stable.
+- Map provider-specific message/tool semantics into the same `ProviderEvent` stream.
 
-## 10. Tool Architecture
+Provider-neutral behavior:
 
-Tool APIs:
+- Core agent loop must not depend on provider-specific message classes.
+- Tool schemas are generated once from `ToolDefinition` and adapted by provider mappers.
+- Provider errors become structured events for both CLI and GUI.
 
-- Tools declare name, description, input schema, and executor.
-- Executors receive workspace, config, cancellation token, and typed input.
-- Results are structured and serializable.
-- Static built-in tools and dynamic Java tools are exposed through the same provider-neutral tool registry.
-- Dynamic tools are discovered from project scope first, then user scope.
-- If a project tool and user tool share the same id, the project tool wins for that workspace.
-- Dynamic tool registration updates the active agent session immediately; restarting jvibe must not be required.
+## 7. Agent Loop
 
-Dynamic tool components:
+MVP flow:
 
-- `DynamicToolRegistry`: owns discovery, manifest validation, build, load, reload, disable, and active-session publication.
-- `ToolPlugin`: Java interface implemented by dynamic tools.
-- `ToolManifest`: `tool.json` metadata with id, name, description, version, plugin API version, entry class, input schema, permissions, dependencies, and enabled/approved state.
-- `ToolPluginContext`: broad core API/service registry available to trusted plugins, including workspace, config, logging, shell/file helpers, Git service, and cancellation.
-- Per-tool classloader: loads compiled plugin jars and supports unload/reload by replacing the classloader.
+1. User submits prompt.
+2. `AgentRunner` builds `ProviderRequest` from session state, system prompt, model, and tool registry.
+3. Provider streams assistant deltas and tool calls.
+4. CLI/GUI renders streaming events.
+5. Tool calls are validated and routed to `ToolExecutor`.
+6. Approval policy blocks risky actions until accepted.
+7. Tool results are appended to the conversation.
+8. The loop continues until final assistant response or max iterations.
+9. Session is persisted.
 
-Dynamic tool bundle layout:
+Loop constraints:
 
-```text
-<tool-id>/
-  tool.json
-  src/
-  build.gradle        optional, required for dependency-backed tools
-  tests/              optional
-  build/              generated
-  dist/<tool-id>.jar  generated
-```
+- One active run per session.
+- Bounded tool-call iterations.
+- Tool execution timeout.
+- Cancellation token shared with provider stream and tool executors.
+- Full structured event log for debugging.
+- Failed tool calls return structured errors to the model unless the failure is fatal.
 
-Dynamic tool build paths:
+Default limits:
 
-- Simple tools compile through embedded `javac` for fast no-dependency tools.
-- Dependency-backed tools build through Gradle and may include tests.
-- New Maven dependencies require explicit user approval before build.
+- Max tool iterations per prompt: 10.
+- Default shell timeout: 120 seconds.
+- Default dynamic tool build timeout: 180 seconds.
+- Default dynamic tool runtime timeout: 120 seconds.
+- Truncate model-visible tool output with a clear marker; keep full output in logs where safe.
 
-Dynamic tool lifecycle:
+## 8. Tool System
 
-1. Agent identifies a missing capability and proposes a tool.
-2. Agent creates or updates a tool bundle in project or user scope.
-3. jvibe validates `tool.json`.
-4. jvibe compiles via `javac` or Gradle.
-5. jvibe loads the jar with a per-tool classloader.
-6. jvibe registers the tool in the active session.
-7. User approves first execution.
-8. Agent can call the tool like any built-in tool.
-9. Failed compile/load/runtime disables the tool and reports a structured error.
+All built-in and dynamic tools expose the same shape:
 
-MVP tools:
+- id/name.
+- description.
+- JSON input schema.
+- approval metadata.
+- executor.
+- structured result.
+
+Built-in MVP tools:
 
 - `shell.run`
 - `file.read`
@@ -338,99 +259,113 @@ MVP tools:
 - `tool.delete`
 - `tool.approve`
 
-Post-MVP JVM tools:
-
-- `jmx.query`
-- `jfr.start`
-- `jfr.stop`
-- `jfr.summary`
-- `jvm.gcStats`
-- `jvm.threadDump`
-- `jvm.heapSummary`
-
-Dynamic Java tools are foundational and should be implemented before advanced JVM diagnostics. JMX, JFR, profiling, and GC tools can then be implemented as bundled or agent-created plugins using the same system.
-
-## 11. Shell Tool
-
-Implementation:
+Shell tool:
 
 - Use `ProcessBuilder`.
-- Default cwd is current workspace root.
-- Capture stdout/stderr separately.
-- Stream output as agent events.
-- Enforce timeout.
-- Support cancellation.
-- Limit output size returned to the model.
-- Keep full output in logs where appropriate.
+- Run in workspace root by default.
+- Capture stdout and stderr separately.
+- Stream output as events.
+- Enforce timeout and cancellation.
+- Require approval unless policy says the command is safe or user passed `--yes`.
 
-Open decision:
-
-- Whether commands require confirmation by default in GUI, CLI, or both.
-
-Recommendation:
-
-- GUI: confirm by default.
-- CLI: confirm by default, with `--yes` for trusted flows.
-
-## 12. File Editing Tool
-
-Implementation:
+File tools:
 
 - Use Java NIO.
-- Represent edits as patches where possible.
-- Normalize path handling against workspace root.
-- Reject paths outside the workspace unless explicitly allowed.
-- Maintain before/after diff.
+- Normalize and validate paths against workspace root.
+- Reject writes outside workspace unless explicitly approved.
+- Prefer patch-style edits for reviewability.
+- Show before/after diff before write in GUI and CLI approval flows.
 
-GUI behavior:
+Git tools:
 
-- Show proposed changes.
-- Allow accept/reject.
-- Track changed files in a workspace panel.
+- Use shell `git` behind `GitService`.
+- MVP supports status, diff, add selected files, commit, and push current branch.
+- Commit and push require approval.
+- Branch creation, PR creation, and conflict resolution UI are post-MVP.
 
-CLI behavior:
+## 9. Dynamic Java Tools
 
-- Print concise diff summary.
-- Prompt before applying unless `--yes`.
+Dynamic Java tools are a first-class feature. The agent can create a tool, compile it, register it, and call it in the same session without restarting or rebuilding core.
 
-## 13. Git Integration
+Discovery order:
 
-MVP:
+1. Project tools: `<workspace>/.jvibe/tools/`
+2. User tools: `~/.jvibe/tools/`
 
-- Status.
-- Diff.
-- Add selected files.
-- Commit.
-- Push.
+Collision rule:
 
-Implementation options:
+- If project and user scopes define the same tool id, the project tool wins for that workspace.
 
-- Start with shelling out to `git` for correctness and familiarity.
-- Wrap it behind `GitService` so JGit can be introduced later if needed.
+Tool bundle layout:
 
-Commit/push flow:
+```text
+<tool-id>/
+  tool.json
+  src/
+  build.gradle        optional, required for dependency-backed tools
+  tests/              optional
+  build/              generated
+  dist/<tool-id>.jar  generated
+```
 
-- Show changed files.
-- Generate or accept commit message.
-- Run commit.
-- Push current branch.
-- Report remote URL and commit SHA.
+Manifest fields:
 
-Out of scope for MVP:
+- `id`: stable tool id.
+- `name`: display name.
+- `description`: provider-facing description.
+- `version`: tool version.
+- `pluginApiVersion`: required jvibe plugin API version.
+- `entryClass`: Java class implementing `ToolPlugin`.
+- `inputSchema`: JSON schema exposed to providers.
+- `permissions`: declared capabilities such as shell, file-read, file-write, git, network, provider, config.
+- `dependencies`: Maven coordinates requested by the tool.
+- `enabled`: whether the tool is available for discovery.
+- `approved`: whether first-run approval has been granted.
 
-- Branch creation automation.
-- PR creation.
-- Conflict resolution UI.
+Build paths:
 
-## 14. CLI Design
+- Simple no-dependency tools compile through embedded `javac`.
+- Tools with Maven dependencies or tests build through Gradle.
+- New Maven dependencies require explicit user approval before build.
+
+Runtime:
+
+- Each compiled tool loads through an isolated per-tool classloader.
+- Reload replaces the classloader and republishes the tool definition.
+- Compile/load/runtime failure disables only that tool and emits a structured error.
+- Approved plugins get broad access to `ToolPluginContext`; this is not a sandbox.
+
+Agent workflow:
+
+1. Agent identifies a missing capability.
+2. Agent proposes a dynamic tool and target scope.
+3. User approves creation if the action writes files.
+4. Agent writes the bundle.
+5. jvibe validates `tool.json`.
+6. jvibe builds via `javac` or Gradle.
+7. User approves any new dependencies.
+8. jvibe loads and registers the tool.
+9. User approves first execution.
+10. Agent calls the tool like any built-in tool.
+
+Dynamic tool management:
+
+- CLI and GUI can list tools.
+- Inspect manifest, source path, compiled jar, status, dependencies, and last error.
+- Approve first run.
+- Rebuild/reload.
+- Disable/delete.
+- Show scope and collision source.
+
+## 10. CLI Design
 
 Entrypoint:
 
 ```bash
-java -jar jvibe-cli.jar
+java -jar app-cli/build/libs/jvibe-cli.jar
 ```
 
-Expected commands:
+Top-level commands:
 
 - `jvibe chat`
 - `jvibe run "prompt"`
@@ -455,97 +390,51 @@ Interactive slash commands:
 - `/clear`
 - `/exit`
 
-Post-MVP slash commands:
+CLI behavior:
 
-- `/jfr`
-- `/jmx`
-- `/profile`
-- `/threads`
-- `/gc`
+- Stream assistant output.
+- Render tool calls and approvals clearly.
+- Prompt before risky actions.
+- Support `--yes` for trusted non-interactive runs.
+- Exit non-zero for fatal runtime/config errors.
 
-## 15. GUI Design
+## 11. GUI Design
 
 Primary layout:
 
 - Left sidebar: workspace, sessions, settings.
 - Main pane: chat transcript.
 - Bottom composer: prompt input, model selector, send/stop.
-- Right pane: tool activity, diffs, Git status.
+- Right pane: tool activity, diffs, approvals, Git status.
 
 Views:
 
 - Chat.
 - Files/diffs.
 - Git.
+- Tools.
 - Settings.
 - Session history.
 
 MVP GUI features:
 
-- Start/open workspace.
-- Select model.
-- Send prompt.
+- Open/select workspace.
+- Select provider/model.
+- Send prompt and stop active run.
 - View streaming response.
 - View tool calls and results.
 - Approve shell/file/Git actions.
-- Manage dynamic tools: list, inspect source/manifest, approve first run, rebuild/reload, disable, and delete.
-- Configure providers/API keys.
+- Manage dynamic tools: list, inspect source/manifest, approve first run, rebuild/reload, disable, delete.
+- Configure provider keys.
 - View chat history.
 
-## 16. Persistence
+Architecture:
 
-Session files:
+- GUI must call core services, not duplicate agent behavior.
+- Keep JavaFX controllers thin.
+- Put state and actions in view models that can be unit tested.
 
-```text
-~/.jvibe/sessions/{session-id}.json
-```
-
-Each session stores:
-
-- Workspace path.
-- Model/provider.
-- Messages.
-- Tool calls.
-- Tool results.
-- Timestamps.
-- Token/usage metadata where available.
-
-Do not persist secrets in session logs.
-
-## 17. Testing Strategy
-
-Unit tests:
-
-- Config loading and first-run defaults.
-- Provider request mapping.
-- Tool schema generation.
-- File path validation.
-- File patch application.
-- Git service command construction.
-- Agent loop iteration limits and cancellation.
-- Dynamic tool manifest parsing and validation.
-- User/project tool discovery and precedence.
-- Per-tool classloader load/reload behavior.
-- First-run approval and dependency approval blocking.
-
-Integration tests:
-
-- Shell tool executes and captures output.
-- File tools operate inside temp workspace.
-- Git service works in temp repository.
-- Provider clients can be tested with mock HTTP server.
-- Simple dynamic Java tool compiles through embedded `javac`.
-- Dependency-backed dynamic Java tool builds through Gradle after approval.
-- Dynamic tool becomes callable in the same session without restart.
-- Broken tool compile/load/runtime failures disable only that tool.
-
-GUI tests:
-
-- Keep JavaFX UI logic thin.
-- Unit test view models/controllers.
-- Add smoke tests for app startup where practical.
-
-## 18. Build And Release
+## 12. Build, Packaging, And CI
 
 Build command:
 
@@ -565,40 +454,94 @@ java -jar app-cli/build/libs/jvibe-cli.jar
 java -jar app-gui/build/libs/jvibe.jar
 ```
 
-No native installers in v1.
+Packaging decisions:
 
-## 19. Milestones
+- No DMG, EXE, native image, or installer in v1.
+- Jars must be runnable from a fresh clone after `./gradlew build`.
+- JavaFX runtime dependencies must be handled by Gradle packaging.
+
+CI after GitHub remote exists:
+
+- Build on macOS and Linux.
+- Run unit and integration tests.
+- Cache Gradle dependencies.
+- Upload CLI/GUI jars as build artifacts.
+
+## 13. Testing Strategy
+
+Unit tests:
+
+- Config loading and first-run defaults.
+- Provider request/event mapping.
+- Tool schema generation.
+- Approval policy decisions.
+- File path validation.
+- File patch application.
+- Git service command construction.
+- Agent loop iteration limits, cancellation, and tool error recovery.
+- Dynamic tool manifest parsing and validation.
+- User/project tool discovery and precedence.
+- Per-tool classloader load/reload behavior.
+- First-run approval and dependency approval blocking.
+
+Integration tests:
+
+- Shell tool executes and captures output.
+- File tools operate inside a temp workspace.
+- Git service works in a temp repository.
+- Provider clients work against a mock HTTP server.
+- Simple dynamic Java tool compiles through embedded `javac`.
+- Dependency-backed dynamic Java tool builds through Gradle after approval.
+- Dynamic tool becomes callable in the same session without restart.
+- Broken tool compile/load/runtime failures disable only that tool.
+
+GUI tests:
+
+- Unit test view models/controllers.
+- Smoke test app startup.
+- Smoke test prompt send with fake provider.
+- Smoke test dynamic tool approval UI with fake registry.
+
+Acceptance scenarios:
+
+- Fresh clone builds successfully with `./gradlew clean build`.
+- First run creates config directories and default files.
+- CLI chat can stream a fake provider response in tests.
+- Agent can read, edit, diff, commit, and push from a temp Git repo in tests.
+- Agent can create and run a simple dynamic Java tool without restarting.
+- GUI opens, sends a prompt, displays tool activity, and handles approval flow.
+
+## 14. Milestones
 
 ### Milestone 0: Repository Foundation
 
-- Initialize Git repository.
-- Add README, requirements, implementation plan, license decision, and `.gitignore`.
-- Add Gradle multi-module skeleton.
-- Add CI later once GitHub remote exists.
+- Add Gradle wrapper and multi-module skeleton.
+- Add license decision.
+- Add CI once remote exists.
+- Push `main` after GitHub remote is provided.
 
 ### Milestone 1: Core Runtime
 
 - Config service.
 - Session model.
-- Provider-neutral message model.
-- Tool interfaces.
+- Provider-neutral message/event model.
+- Tool interfaces and approval policy.
 - Public plugin API and `ToolPluginContext`.
 - Dynamic tool manifest model.
-- Event bus/streaming model.
-- Logging.
+- Logging and structured events.
 
 ### Milestone 2: Dynamic Tool Foundation
 
 - Dynamic tool registry.
 - Project and user tool discovery.
-- `tool.json` validation.
+- Manifest validation.
 - Embedded `javac` build path.
 - Gradle build path for dependency-backed tools.
 - Per-tool classloader loading and hot reload.
 - First-run and dependency approval flow.
-- CLI management commands for list, inspect, build, reload, disable, delete, and approve.
+- CLI tool management commands.
 
-### Milestone 3: CLI MVP
+### Milestone 3: Built-In Tools And CLI MVP
 
 - Interactive CLI.
 - OpenAI provider.
@@ -606,28 +549,28 @@ No native installers in v1.
 - Dynamic tool creation and same-session use.
 - Slash commands.
 - Session persistence.
-- Unit/integration tests.
+- Core unit/integration tests.
 
 ### Milestone 4: GUI MVP
 
-- JavaFX shell.
+- JavaFX app shell.
 - Chat transcript.
 - Model selector.
 - Prompt composer.
-- Tool activity panel.
-- Diff approval flow.
+- Tool activity and approval panel.
+- Diff review flow.
 - Dynamic tool management UI.
 - Settings screen.
 
 ### Milestone 5: Provider And Tool Expansion
 
 - Anthropic provider.
+- Better model metadata.
 - More slash commands.
-- Better Git flows.
-- Improved model metadata.
 - Safer permission profiles.
+- Improved Git flows.
 
-### Milestone 6: JVM Ecosystem Features
+### Milestone 6: JVM Ecosystem Tools
 
 - JMX queries.
 - JFR recording.
@@ -641,36 +584,48 @@ No native installers in v1.
 - Background task runner.
 - Checkpointing.
 - Resume/cancel.
-- Notification hooks.
 - Task history.
+- Notification hooks.
 
-## 20. Immediate Next Steps
+## 15. Immediate Next Steps
 
-1. Initialize the Git repository.
-2. Commit this planning baseline.
-3. Decide GitHub owner/repo and visibility.
-4. Create remote repository.
-5. Push `main`.
-6. Scaffold Gradle multi-module project.
-7. Implement config loading and first-run defaults.
-8. Implement provider-neutral core model.
-9. Implement dynamic tool registry and plugin API.
-10. Implement OpenAI provider behind abstraction.
-11. Build CLI MVP before GUI complexity expands.
+1. Get GitHub repository URL and push current `main`.
+2. Add Gradle wrapper and multi-module skeleton.
+3. Configure Java 21 toolchain and baseline dependencies.
+4. Implement config service and first-run defaults.
+5. Implement provider-neutral events, sessions, and tool interfaces.
+6. Implement approval policy.
+7. Implement dynamic tool manifest, registry, and simple `javac` build path.
+8. Implement OpenAI provider behind `ProviderClient`.
+9. Implement shell/file/Git tools.
+10. Build CLI MVP.
+11. Add JavaFX GUI MVP.
 
-## 21. Definition Of Done For MVP
+## 16. MVP Definition Of Done
 
-The MVP is complete when:
+MVP is complete when:
 
-- A user can clone the repo and run `./gradlew build`.
-- The CLI jar can start an interactive chat.
-- The GUI jar can start a basic JavaFX chat app.
-- The user can configure an OpenAI API key.
-- The agent can request shell/file/Git tool calls.
-- The agent can create, compile, register, and call a simple dynamic Java tool without restarting.
-- The user can approve first execution of a newly-created dynamic tool.
-- New Maven dependencies for dynamic tools require approval before build.
-- The user can approve or reject risky actions.
+- A user can clone the repo and run `./gradlew clean build`.
+- The CLI jar starts interactive chat.
+- The GUI jar starts a JavaFX chat app.
+- First run creates default config and prompt files.
+- User can configure an OpenAI API key.
+- Agent can request shell/file/Git tool calls.
+- User can approve or reject risky actions.
 - Chat history persists across restarts.
-- Git status, commit, and push work from the app.
-- Tests cover the core agent loop, config, MVP tools, and dynamic tool lifecycle.
+- Git status, diff, commit, and push work from CLI and GUI.
+- Agent can create, compile, register, approve, and call a simple dynamic Java tool without restarting.
+- New Maven dependencies for dynamic tools require approval before build.
+- Tests cover core agent loop, config, built-in MVP tools, and dynamic tool lifecycle.
+
+## 17. Post-MVP Backlog
+
+- Anthropic provider.
+- JMX/JFR/profiling tools.
+- Autonomous long-running tasks.
+- PR creation.
+- Branch management and conflict resolution UI.
+- macOS Keychain integration.
+- Rich code editor/diff viewer.
+- Native installers.
+- Remote tool marketplace or sharing workflow.
