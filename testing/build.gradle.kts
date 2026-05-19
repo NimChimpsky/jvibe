@@ -1,4 +1,0 @@
-dependencies {
-  implementation(project(":core"))
-  implementation("org.junit.jupiter:junit-jupiter-api:5.13.4")
-}

@@ -15,10 +15,11 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.logging.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public final class DynamicToolRegistry {
-  private static final Logger LOGGER = Logger.getLogger(DynamicToolRegistry.class.getName());
+  private static final Logger LOGGER = LoggerFactory.getLogger(DynamicToolRegistry.class);
   private final Path userToolsDir;
   private final ToolBuildService buildService;
   private final Map<String, LoadedDynamicTool> loaded = new LinkedHashMap<>();

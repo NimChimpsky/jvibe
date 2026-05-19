@@ -23,3 +23,5 @@ java -jar app-gui/build/libs/jvibe-0.1.0-SNAPSHOT.jar
 ## Current State
 
 The repository has a working multi-module Gradle skeleton, a core agent/tool runtime, config bootstrap, built-in shell/file/Git tools, dynamic Java tool compilation/loading, a CLI entry point, a JavaFX GUI shell, and core tests.
+
+The Avaje coding skills used for this project are versioned under `.agents/skills/`.

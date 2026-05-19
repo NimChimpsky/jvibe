@@ -7,11 +7,13 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
+import jakarta.inject.Singleton;
 import javax.tools.ToolProvider;
 
+@Singleton
 public final class ToolBuildService {
   public ToolBuildResult build(Path toolDir, ToolManifest manifest) throws IOException {
-    if (!manifest.dependencies().isEmpty() || Files.exists(toolDir.resolve("build.gradle")) || Files.exists(toolDir.resolve("build.gradle.kts"))) {
+    if (!manifest.dependencies().isEmpty() || Files.exists(toolDir.resolve("build.gradle"))) {
       return buildWithGradle(toolDir);
     }
     return buildWithJavac(toolDir, manifest);

@@ -12,9 +12,9 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "jvibe"
+rootProject.name = 'jvibe'
 
-include("core")
-include("testing")
-include("app-cli")
-include("app-gui")
+include 'core'
+include 'testing'
+include 'app-cli'
+include 'app-gui'

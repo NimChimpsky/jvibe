@@ -2,7 +2,9 @@ package com.jvibe.provider;
 
 import java.util.List;
 import java.util.stream.Stream;
+import jakarta.inject.Singleton;
 
+@Singleton
 public final class EchoProviderClient implements ProviderClient {
   @Override
   public Stream<ProviderEvent> stream(ProviderRequest request) {

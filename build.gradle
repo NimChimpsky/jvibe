@@ -1,0 +1,41 @@
+plugins {
+  id 'java'
+}
+
+group = 'com.jvibe'
+version = '0.1.0-SNAPSHOT'
+
+ext {
+  avajeInjectVersion = '12.5'
+  avajeConfigVersion = '5.1'
+  avajeJsonbVersion = '3.12'
+  avajeSimpleLoggerVersion = '1.5'
+  junitVersion = '5.13.4'
+  mockitoVersion = '5.21.0'
+}
+
+subprojects {
+  apply plugin: 'java'
+
+  group = rootProject.group
+  version = rootProject.version
+
+  tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 21
+  }
+
+  tasks.withType(Test).configureEach {
+    useJUnitPlatform()
+  }
+
+  dependencies {
+    testImplementation "org.junit.jupiter:junit-jupiter:${junitVersion}"
+    testImplementation "org.mockito:mockito-core:${mockitoVersion}"
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+  }
+
+  configurations.configureEach {
+    resolutionStrategy.failOnVersionConflict()
+  }
+}

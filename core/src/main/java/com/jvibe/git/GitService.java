@@ -5,7 +5,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
+import jakarta.inject.Singleton;
 
+@Singleton
 public final class GitService {
   public GitCommandResult run(Path workspace, String... args) throws IOException, InterruptedException {
     var command = new String[args.length + 1];

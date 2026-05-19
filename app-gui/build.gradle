@@ -1,0 +1,27 @@
+plugins {
+  id 'application'
+  id 'org.openjfx.javafxplugin' version '0.1.0'
+}
+
+dependencies {
+  implementation project(':core')
+  runtimeOnly "io.avaje:avaje-simple-logger:${avajeSimpleLoggerVersion}"
+}
+
+javafx {
+  version = '21.0.11'
+  modules = ['javafx.controls']
+}
+
+application {
+  mainClass = 'com.jvibe.gui.JvibeGui'
+}
+
+tasks.named('jar') {
+  archiveBaseName = 'jvibe'
+  manifest {
+    attributes 'Main-Class': application.mainClass.get()
+  }
+  duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+  from configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+}

@@ -1,0 +1,21 @@
+plugins {
+  id 'application'
+}
+
+dependencies {
+  implementation project(':core')
+  runtimeOnly "io.avaje:avaje-simple-logger:${avajeSimpleLoggerVersion}"
+}
+
+application {
+  mainClass = 'com.jvibe.cli.JvibeCli'
+}
+
+tasks.named('jar') {
+  archiveBaseName = 'jvibe-cli'
+  manifest {
+    attributes 'Main-Class': application.mainClass.get()
+  }
+  duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+  from configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+}

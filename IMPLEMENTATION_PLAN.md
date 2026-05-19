@@ -24,9 +24,9 @@ MVP principle:
 ### Language, Runtime, And Build
 
 - Target Java 21 bytecode with `--release 21`; use a Java 21 Gradle toolchain when available, but allow newer local JDKs to compile Java 21-compatible output.
-- Use Gradle multi-module build.
+- Use Gradle multi-module build with Groovy DSL. Do not use Kotlin DSL.
 - Generate and commit the Gradle wrapper.
-- Use Avaje Inject, Config, Jsonb, and logging.
+- Use Avaje Inject, Config, Jsonb, and Simple Logger following the checked-in `.agents/skills/` guides.
 - Use JavaFX for GUI.
 - Use JUnit 5 and Mockito for tests.
 - Use JDK `HttpClient` initially for provider HTTP calls.
@@ -54,8 +54,8 @@ Target Gradle modules:
 
 ```text
 jvibe-root/
-  settings.gradle.kts
-  build.gradle.kts
+  settings.gradle
+  build.gradle
   gradlew
   gradlew.bat
   gradle/
@@ -325,7 +325,7 @@ Manifest fields:
 Build paths:
 
 - Simple no-dependency tools compile through embedded `javac`.
-- Tools with Maven dependencies or tests build through Gradle.
+- Tools with Maven dependencies or tests build through Gradle using Groovy `build.gradle` files.
 - New Maven dependencies require explicit user approval before build.
 
 Runtime:

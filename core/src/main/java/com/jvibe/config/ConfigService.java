@@ -2,7 +2,9 @@ package com.jvibe.config;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import jakarta.inject.Singleton;
 
+@Singleton
 public final class ConfigService {
   private static final String DEFAULT_SYSTEM_PROMPT = """
       You are jvibe, a Java-based coding agent. Be direct, inspect the workspace before changing files,
