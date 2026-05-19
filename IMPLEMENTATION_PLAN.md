@@ -23,7 +23,7 @@ MVP principle:
 
 ### Language, Runtime, And Build
 
-- Use Java 21 as the target runtime and Gradle toolchain, even if newer JDKs are installed locally.
+- Target Java 21 bytecode with `--release 21`; use a Java 21 Gradle toolchain when available, but allow newer local JDKs to compile Java 21-compatible output.
 - Use Gradle multi-module build.
 - Generate and commit the Gradle wrapper.
 - Use Avaje Inject, Config, Jsonb, and logging.
@@ -591,7 +591,7 @@ Acceptance scenarios:
 
 1. Get GitHub repository URL and push current `main`.
 2. Add Gradle wrapper and multi-module skeleton.
-3. Configure Java 21 toolchain and baseline dependencies.
+3. Configure Java 21 bytecode targeting and baseline dependencies.
 4. Implement config service and first-run defaults.
 5. Implement provider-neutral events, sessions, and tool interfaces.
 6. Implement approval policy.
