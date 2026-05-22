@@ -14,7 +14,12 @@ public final class FileReadTool {
 
   public static RegisteredTool registered() {
     return new RegisteredTool(
-        new ToolDefinition("file.read", "Read file", "Read a UTF-8 file inside the workspace.", Map.of("type", "object"), ApprovalRequest.Risk.LOW),
+        new ToolDefinition(
+            "file_read",
+            "Read file",
+            "Read a UTF-8 file inside the workspace.",
+            ToolSchemas.object(Map.of("path", ToolSchemas.string("Relative file path under the workspace.")), "path"),
+            ApprovalRequest.Risk.LOW),
         FileReadTool::execute);
   }
 

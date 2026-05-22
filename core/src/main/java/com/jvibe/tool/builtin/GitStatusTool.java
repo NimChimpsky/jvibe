@@ -14,7 +14,7 @@ public final class GitStatusTool {
 
   public static RegisteredTool registered() {
     return new RegisteredTool(
-        new ToolDefinition("git.status", "Git status", "Show short Git status.", Map.of("type", "object"), ApprovalRequest.Risk.LOW),
+        new ToolDefinition("git_status", "Git status", "Show short Git status.", ToolSchemas.object(), ApprovalRequest.Risk.LOW),
         GitStatusTool::execute);
   }
 

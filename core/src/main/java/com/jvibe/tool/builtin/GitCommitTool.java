@@ -14,7 +14,12 @@ public final class GitCommitTool {
 
   public static RegisteredTool registered() {
     return new RegisteredTool(
-        new ToolDefinition("git.commit", "Git commit", "Stage all current changes and create a Git commit.", Map.of("type", "object"), ApprovalRequest.Risk.HIGH),
+        new ToolDefinition(
+            "git_commit",
+            "Git commit",
+            "Stage all current changes and create a Git commit.",
+            ToolSchemas.object(Map.of("message", ToolSchemas.string("Commit message.")), "message"),
+            ApprovalRequest.Risk.HIGH),
         GitCommitTool::execute);
   }
 

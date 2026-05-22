@@ -1,5 +1,6 @@
 package com.jvibe.tool.dynamic;
 
+import com.jvibe.tool.ToolDefinition;
 import io.avaje.jsonb.Json;
 import io.avaje.jsonb.Jsonb;
 import java.util.List;
@@ -37,6 +38,9 @@ public record ToolManifest(
     require(name, "name");
     require(description, "description");
     require(entryClass, "entryClass");
+    if (!ToolDefinition.isValidId(id)) {
+      throw new IllegalArgumentException("Tool manifest id must match ^[a-zA-Z0-9_-]+$: " + id);
+    }
   }
 
   private static void require(String value, String field) {

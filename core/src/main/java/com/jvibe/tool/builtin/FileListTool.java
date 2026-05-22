@@ -14,7 +14,12 @@ public final class FileListTool {
 
   public static RegisteredTool registered() {
     return new RegisteredTool(
-        new ToolDefinition("file.list", "List files", "List files under the workspace.", Map.of("type", "object"), ApprovalRequest.Risk.LOW),
+        new ToolDefinition(
+            "file_list",
+            "List files",
+            "List files under the workspace. Use path '.' for the workspace root.",
+            ToolSchemas.object(Map.of("path", ToolSchemas.string("Relative path under the workspace. Defaults to '.'."))),
+            ApprovalRequest.Risk.LOW),
         FileListTool::execute);
   }
 

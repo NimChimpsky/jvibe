@@ -14,7 +14,7 @@ public final class GitDiffTool {
 
   public static RegisteredTool registered() {
     return new RegisteredTool(
-        new ToolDefinition("git.diff", "Git diff", "Show Git diff.", Map.of("type", "object"), ApprovalRequest.Risk.LOW),
+        new ToolDefinition("git_diff", "Git diff", "Show Git diff.", ToolSchemas.object(), ApprovalRequest.Risk.LOW),
         GitDiffTool::execute);
   }
 

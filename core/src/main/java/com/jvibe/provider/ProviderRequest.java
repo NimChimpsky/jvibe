@@ -8,6 +8,8 @@ import java.util.Map;
 public record ProviderRequest(
     String provider,
     String model,
+    ProviderSettings settings,
+    ThinkingOption thinking,
     String systemPrompt,
     List<Message> messages,
     List<ToolDefinition> tools,

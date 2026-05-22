@@ -17,4 +17,15 @@ final class ToolArguments {
     var value = arguments.get(key);
     return value == null ? fallback : value.toString();
   }
+
+  static boolean bool(Map<String, Object> arguments, String key, boolean fallback) {
+    var value = arguments.get(key);
+    if (value == null) {
+      return fallback;
+    }
+    if (value instanceof Boolean bool) {
+      return bool;
+    }
+    return Boolean.parseBoolean(value.toString());
+  }
 }

@@ -14,7 +14,7 @@ public final class GitPushTool {
 
   public static RegisteredTool registered() {
     return new RegisteredTool(
-        new ToolDefinition("git.push", "Git push", "Push the current Git branch.", Map.of("type", "object"), ApprovalRequest.Risk.HIGH),
+        new ToolDefinition("git_push", "Git push", "Push the current Git branch.", ToolSchemas.object(), ApprovalRequest.Risk.HIGH),
         GitPushTool::execute);
   }
 

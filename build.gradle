@@ -39,3 +39,14 @@ subprojects {
     resolutionStrategy.failOnVersionConflict()
   }
 }
+
+tasks.register('jvibe', Exec) {
+  group = 'application'
+  description = 'Builds the GUI install distribution and launches the installed jvibe app.'
+  dependsOn ':app-gui:installDist'
+
+  executable = layout.projectDirectory.file(
+      org.gradle.internal.os.OperatingSystem.current().isWindows()
+          ? 'app-gui/build/install/jvibe/bin/jvibe.bat'
+          : 'app-gui/build/install/jvibe/bin/jvibe').asFile
+}

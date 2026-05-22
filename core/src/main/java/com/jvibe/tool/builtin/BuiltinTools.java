@@ -21,17 +21,18 @@ public final class BuiltinTools {
         FileReadTool.registered(),
         FileWriteTool.registered(),
         FilePatchTool.registered(),
+        PatchApplyTool.registered(),
         GitStatusTool.registered(),
         GitDiffTool.registered(),
         GitCommitTool.registered(),
         GitPushTool.registered(),
-        ToolManagementTool.registered("tool.list"),
-        ToolManagementTool.registered("tool.inspect"),
-        ToolManagementTool.registered("tool.create"),
-        ToolManagementTool.registered("tool.build"),
-        ToolManagementTool.registered("tool.reload"),
-        ToolManagementTool.registered("tool.disable"),
-        ToolManagementTool.registered("tool.delete"),
-        ToolManagementTool.registered("tool.approve"));
+        ToolManagementTool.registered("tool_list"),
+        ToolManagementTool.registered("tool_inspect"),
+        ToolManagementTool.registered("tool_create"),
+        ToolManagementTool.registered("tool_build"),
+        ToolManagementTool.registered("tool_reload"),
+        ToolManagementTool.registered("tool_disable"),
+        ToolManagementTool.registered("tool_delete"),
+        ToolManagementTool.registered("tool_approve"));
   }
 }

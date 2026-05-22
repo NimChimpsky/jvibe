@@ -7,6 +7,11 @@ import jakarta.inject.Singleton;
 @Singleton
 public final class EchoProviderClient implements ProviderClient {
   @Override
+  public String providerId() {
+    return "local";
+  }
+
+  @Override
   public Stream<ProviderEvent> stream(ProviderRequest request) {
     var last = request.messages().isEmpty() ? "" : request.messages().get(request.messages().size() - 1).content();
     return Stream.of(new ProviderEvent.AssistantDelta("Echo: " + last), new ProviderEvent.Done());
@@ -14,6 +19,11 @@ public final class EchoProviderClient implements ProviderClient {
 
   @Override
   public List<ModelDescriptor> models() {
-    return List.of(new ModelDescriptor("local", "echo", "Local Echo", 8192, false));
+    return List.of(new ModelDescriptor("local", "echo", "Local Echo", 8192, false, List.of(ThinkingOption.of("none", "None")), ModelDescriptor.Source.STATIC));
+  }
+
+  @Override
+  public List<ModelDescriptor> refreshModels(ProviderSettings settings) {
+    return models();
   }
 }

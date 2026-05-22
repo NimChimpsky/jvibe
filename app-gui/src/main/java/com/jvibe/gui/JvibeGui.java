@@ -1,68 +1,1185 @@
 package com.jvibe.gui;
 
+import com.formdev.flatlaf.FlatDarculaLaf;
+import com.formdev.flatlaf.FlatDarkLaf;
+import com.formdev.flatlaf.FlatIntelliJLaf;
+import com.formdev.flatlaf.FlatLaf;
+import com.formdev.flatlaf.FlatLightLaf;
+import com.formdev.flatlaf.intellijthemes.FlatArcDarkIJTheme;
+import com.formdev.flatlaf.intellijthemes.FlatDraculaIJTheme;
+import com.formdev.flatlaf.intellijthemes.FlatGruvboxDarkHardIJTheme;
+import com.formdev.flatlaf.intellijthemes.FlatHighContrastIJTheme;
+import com.formdev.flatlaf.intellijthemes.FlatMonokaiProIJTheme;
+import com.formdev.flatlaf.intellijthemes.FlatNordIJTheme;
+import com.formdev.flatlaf.intellijthemes.FlatOneDarkIJTheme;
+import com.formdev.flatlaf.intellijthemes.FlatSolarizedDarkIJTheme;
+import com.formdev.flatlaf.intellijthemes.FlatSolarizedLightIJTheme;
+import com.formdev.flatlaf.intellijthemes.materialthemeuilite.FlatMTGitHubDarkIJTheme;
+import com.formdev.flatlaf.intellijthemes.materialthemeuilite.FlatMTGitHubIJTheme;
 import com.jvibe.config.ConfigService;
-import com.jvibe.config.JvibePaths;
-import javafx.application.Application;
-import javafx.geometry.Insets;
-import javafx.scene.Scene;
-import javafx.scene.control.Button;
-import javafx.scene.control.ComboBox;
-import javafx.scene.control.Label;
-import javafx.scene.control.ListView;
-import javafx.scene.control.TextArea;
-import javafx.scene.control.TextField;
-import javafx.scene.layout.BorderPane;
-import javafx.scene.layout.HBox;
-import javafx.scene.layout.VBox;
-import javafx.stage.Stage;
+import com.jvibe.config.JvibeConfig;
+import com.jvibe.deployment.DeploymentProfile;
+import com.jvibe.deployment.DeploymentService;
+import com.jvibe.deployment.DeploymentTarget;
+import com.jvibe.events.AgentEvent;
+import com.jvibe.gui.controller.ModelSelectionController;
+import com.jvibe.gui.controller.PromptController;
+import com.jvibe.gui.controller.ProviderSettingsController;
+import com.jvibe.logging.FileLogService;
+import com.jvibe.session.AgentSession;
+import com.jvibe.tool.ToolDefinition;
+import com.jvibe.tool.builtin.BuiltinTools;
+import com.jvibe.workspace.Workspace;
+import io.avaje.inject.BeanScope;
+import java.awt.BorderLayout;
+import java.awt.Component;
+import java.awt.Dimension;
+import java.awt.Font;
+import java.awt.Insets;
+import java.awt.Color;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.event.KeyEvent;
+import java.awt.event.MouseEvent;
+import java.io.IOException;
+import java.nio.file.Path;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.function.Supplier;
+import javax.swing.BorderFactory;
+import javax.swing.Box;
+import javax.swing.BoxLayout;
+import javax.swing.DefaultListModel;
+import javax.swing.Icon;
+import javax.swing.JButton;
+import javax.swing.JComboBox;
+import javax.swing.JComponent;
+import javax.swing.JDialog;
+import javax.swing.JFrame;
+import javax.swing.JLabel;
+import javax.swing.JList;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JPopupMenu;
+import javax.swing.JScrollPane;
+import javax.swing.JSplitPane;
+import javax.swing.JTabbedPane;
+import javax.swing.JTextArea;
+import javax.swing.KeyStroke;
+import javax.swing.ListCellRenderer;
+import javax.swing.ListSelectionModel;
+import javax.swing.SwingUtilities;
+import javax.swing.SwingWorker;
+import javax.swing.ToolTipManager;
+import javax.swing.UIManager;
+import javax.swing.border.EmptyBorder;
 
-public final class JvibeGui extends Application {
-  @Override
-  public void start(Stage stage) throws Exception {
-    new ConfigService(JvibePaths.userHome()).bootstrap();
+public final class JvibeGui {
+  private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm:ss");
+  static final int COMPOSER_HEIGHT = 220;
+  static final int PROMPT_INPUT_HEIGHT = 118;
+  static final int FILE_REFERENCE_ROW_HEIGHT = 26;
+  private static final int SHELL_HEIGHT = 220;
+  private static final int MESSAGE_MAX_WIDTH = 640;
+  private static final double MESSAGE_WIDTH_RATIO = 0.68;
 
-    var sessions = new ListView<String>();
-    sessions.getItems().add("Current workspace");
+  private BeanScope scope;
+  private ConfigService configService;
+  private ProviderSettingsController providerSettingsController;
+  private ModelSelectionController modelSelectionController;
+  private PromptController promptController;
+  private DeploymentService deploymentService;
+  private FileLogService fileLogService;
+  private Workspace workspace;
+  private AgentSession session;
+  private JFrame frame;
+  private JPanel chatMessages;
+  private JSplitPane chatAndShell;
+  private ShellPanel shellPanel;
+  private JTextArea activeAssistantMessage;
+  private JPanel content;
+  private JComboBox<String> modelSelector;
+  private JTextArea prompt;
+  private JPanel fileReferencePanel;
+  private final List<Path> promptFileReferences = new ArrayList<>();
+  private DefaultListModel<LogEntry> logModel;
+  private JList<LogEntry> logList;
+  private JTextArea fullLogArea;
+  private DefaultListModel<String> approvalsModel;
+  private DefaultListModel<String> toolsModel;
+  private StringBuilder activeAssistantLog = new StringBuilder();
+  private int activeAssistantChars;
+  private boolean promptRunning;
+  private AppTheme currentTheme = AppTheme.FLATLAF_DARK;
 
-    var transcript = new TextArea();
-    transcript.setEditable(false);
-    transcript.setWrapText(true);
+  public static void main(String[] args) {
+    SwingUtilities.invokeLater(() -> {
+      configureApplication();
+      try {
+        new JvibeGui().start();
+      } catch (Exception e) {
+        JOptionPane.showMessageDialog(null, e.getMessage(), "jvibe startup failed", JOptionPane.ERROR_MESSAGE);
+      }
+    });
+  }
 
-    var model = new ComboBox<String>();
-    model.getItems().addAll("local/echo", "openai/gpt-5.2");
-    model.getSelectionModel().selectFirst();
+  private static void configureApplication() {
+    System.setProperty("apple.awt.application.name", "jvibe");
+    System.setProperty("apple.laf.useScreenMenuBar", "true");
+    System.setProperty("flatlaf.useNativeLibrary", "false");
+    applyTheme(AppTheme.FLATLAF_DARK);
+  }
 
-    var prompt = new TextField();
-    prompt.setPromptText("Ask jvibe");
-    var send = new Button("Send");
-    send.setOnAction(event -> {
-      if (!prompt.getText().isBlank()) {
-        transcript.appendText("You: " + prompt.getText() + System.lineSeparator());
-        transcript.appendText("jvibe: GUI shell is ready; core agent wiring continues in CLI MVP." + System.lineSeparator());
-        prompt.clear();
+  private static void applyTheme(AppTheme theme) {
+    try {
+      UIManager.setLookAndFeel(theme.create());
+    } catch (Exception e) {
+      FlatDarkLaf.setup();
+    }
+  }
+
+  private void start() throws Exception {
+    scope = BeanScope.builder().build();
+    configService = scope.get(ConfigService.class);
+    providerSettingsController = scope.get(ProviderSettingsController.class);
+    modelSelectionController = scope.get(ModelSelectionController.class);
+    promptController = scope.get(PromptController.class);
+    deploymentService = scope.get(DeploymentService.class);
+    fileLogService = scope.get(FileLogService.class);
+    configService.bootstrap();
+    currentTheme = AppTheme.fromConfig(configService.config().theme());
+    applyRunningTheme(currentTheme);
+    initialiseCore(Path.of(System.getProperty("user.dir")));
+
+    frame = new JFrame("jvibe");
+    frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+    frame.addWindowListener(new java.awt.event.WindowAdapter() {
+      @Override
+      public void windowClosing(java.awt.event.WindowEvent event) {
+        if (shellPanel != null) {
+          shellPanel.stopSession();
+        }
+      }
+
+      @Override
+      public void windowClosed(java.awt.event.WindowEvent event) {
+        scope.close();
+      }
+    });
+    frame.setMinimumSize(new Dimension(1040, 680));
+    frame.setSize(1320, 860);
+    frame.setContentPane(buildRoot());
+    showChatView();
+    log("INFO", "GUI ready: " + workspace.root());
+    frame.setLocationRelativeTo(null);
+    frame.setVisible(true);
+    SwingUtilities.invokeLater(() -> prompt.requestFocusInWindow());
+  }
+
+  private void initialiseCore(Path root) throws Exception {
+    workspace = new Workspace(root);
+    session = new AgentSession(workspace, BuiltinTools.registry());
+    refreshModelSelector();
+    refreshTools();
+  }
+
+  private JComponent buildRoot() {
+    var mainAndRight = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, buildMain(), buildInspector());
+    mainAndRight.setResizeWeight(1.0);
+    mainAndRight.setDividerSize(6);
+    mainAndRight.setBorder(null);
+
+    var root = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, buildSidebar(), mainAndRight);
+    root.setResizeWeight(0.0);
+    root.setDividerSize(6);
+    root.setBorder(null);
+    return root;
+  }
+
+  private JComponent buildSidebar() {
+    var top = new JPanel();
+    top.setLayout(new BorderLayout(8, 0));
+    top.setBorder(new EmptyBorder(16, 16, 12, 16));
+    top.setMinimumSize(new Dimension(260, 0));
+    top.setPreferredSize(new Dimension(260, 66));
+    top.add(button("Deploy Agent", event -> showDeployAgentDialog()), BorderLayout.WEST);
+    top.add(button("New Chat", event -> {
+      chatMessages.removeAll();
+      appendAssistant("New chat started.");
+      log("INFO", "Started new chat");
+    }), BorderLayout.EAST);
+
+    var files = new JPanel(new BorderLayout(0, 8));
+    files.setBorder(new EmptyBorder(8, 16, 8, 16));
+    files.add(section("Files"), BorderLayout.NORTH);
+    files.add(scroll(FileSystemTree.create(workspace.root(), this::addFileReference)), BorderLayout.CENTER);
+
+    var bottom = new JPanel();
+    bottom.setLayout(new BoxLayout(bottom, BoxLayout.Y_AXIS));
+    bottom.setBorder(new EmptyBorder(12, 16, 16, 16));
+    bottom.setMinimumSize(new Dimension(260, 120));
+    bottom.setPreferredSize(new Dimension(260, COMPOSER_HEIGHT));
+    bottom.add(section("Settings"));
+    bottom.add(Box.createVerticalStrut(8));
+    var settingsActions = new JPanel(new java.awt.GridLayout(1, 2, 8, 0));
+    settingsActions.setAlignmentX(Component.LEFT_ALIGNMENT);
+    settingsActions.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
+    settingsActions.add(button("General", event -> showGeneralSettingsDialog()));
+    settingsActions.add(button("Providers", event -> showSettingsDialog()));
+    bottom.add(settingsActions);
+    bottom.add(Box.createVerticalStrut(8));
+    bottom.add(themeSelector());
+
+    files.setMinimumSize(new Dimension(260, 140));
+
+    var topAndFiles = new JSplitPane(JSplitPane.VERTICAL_SPLIT, top, files);
+    topAndFiles.setResizeWeight(0.0);
+    topAndFiles.setDividerSize(6);
+    topAndFiles.setBorder(null);
+
+    var sections = new JSplitPane(JSplitPane.VERTICAL_SPLIT, topAndFiles, bottom);
+    sections.setResizeWeight(1.0);
+    sections.setDividerSize(6);
+    sections.setBorder(null);
+
+    var panel = new JPanel(new BorderLayout());
+    panel.setPreferredSize(new Dimension(260, 0));
+    panel.add(sections, BorderLayout.CENTER);
+    return panel;
+  }
+
+  private JComponent buildMain() {
+    var panel = new JPanel(new BorderLayout());
+    content = new JPanel(new BorderLayout());
+    panel.add(content, BorderLayout.CENTER);
+    return panel;
+  }
+
+  private void refreshModelSelector() {
+    if (modelSelector == null || modelSelectionController == null) {
+      return;
+    }
+    var current = session == null ? "" : session.provider() + "/" + session.model();
+    modelSelector.removeAllItems();
+    var containsCurrent = false;
+    for (var choice : modelSelectionController.choices()) {
+      var display = choice.display();
+      modelSelector.addItem(display);
+      containsCurrent = containsCurrent || display.equals(current);
+    }
+    if (containsCurrent) {
+      modelSelector.setSelectedItem(current);
+    }
+    if (!containsCurrent && modelSelector.getItemCount() > 0) {
+      modelSelector.setSelectedIndex(0);
+      applySelectedModel();
+    } else if (modelSelector.getItemCount() == 0 && session != null) {
+      session.selectModel("", "");
+    }
+  }
+
+  private void applySelectedModel() {
+    if (session == null || modelSelector == null || modelSelector.getSelectedItem() == null) {
+      return;
+    }
+    var selected = modelSelector.getSelectedItem().toString();
+    modelSelectionController.apply(session, selected);
+    log("INFO", "Selected model: " + selected);
+  }
+
+  JComponent buildComposer() {
+    prompt = new JTextArea(4, 20);
+    prompt.setLineWrap(true);
+    prompt.setWrapStyleWord(true);
+    prompt.setMargin(new Insets(10, 10, 10, 10));
+    prompt.getInputMap().put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), "sendPrompt");
+    prompt.getInputMap().put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, KeyEvent.SHIFT_DOWN_MASK), "insert-break");
+    prompt.getActionMap().put("sendPrompt", new javax.swing.AbstractAction() {
+      @Override
+      public void actionPerformed(java.awt.event.ActionEvent event) {
+        sendPrompt();
       }
     });
 
-    var composer = new HBox(8, model, prompt, send);
-    composer.setPadding(new Insets(8));
-    HBox.setHgrow(prompt, javafx.scene.layout.Priority.ALWAYS);
+    var send = button("Send");
+    send.addActionListener(event -> sendPrompt());
 
-    var tools = new VBox(8, new Label("Tool activity"), new Label("Approvals and dynamic tools will appear here."));
-    tools.setPadding(new Insets(8));
-    tools.setPrefWidth(280);
+    modelSelector = new JComboBox<>();
+    modelSelector.addActionListener(event -> applySelectedModel());
+    refreshModelSelector();
 
-    var root = new BorderPane();
-    root.setLeft(sessions);
-    root.setCenter(transcript);
-    root.setRight(tools);
-    root.setBottom(composer);
+    var modelPanel = new JPanel();
+    modelPanel.add(new JLabel("Model"));
+    modelPanel.add(modelSelector);
 
-    stage.setTitle("jvibe");
-    stage.setScene(new Scene(root, 1100, 720));
-    stage.show();
+    var footer = new JPanel(new BorderLayout(10, 0));
+    footer.add(modelPanel, BorderLayout.WEST);
+    footer.add(send, BorderLayout.EAST);
+
+    var terminalRow = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.CENTER, 0, 0));
+    terminalRow.add(shellToggleButton());
+
+    var controls = new JPanel(new BorderLayout(0, 6));
+    controls.add(footer, BorderLayout.NORTH);
+    controls.add(terminalRow, BorderLayout.SOUTH);
+
+    fileReferencePanel = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 4, 1));
+    fileReferencePanel.setOpaque(false);
+    var fileReferenceRowSize = new Dimension(0, FILE_REFERENCE_ROW_HEIGHT);
+    fileReferencePanel.setMinimumSize(fileReferenceRowSize);
+    fileReferencePanel.setPreferredSize(fileReferenceRowSize);
+    fileReferencePanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, FILE_REFERENCE_ROW_HEIGHT));
+
+    var promptStack = new JPanel(new BorderLayout(0, 4));
+    promptStack.add(fileReferencePanel, BorderLayout.NORTH);
+    promptStack.add(fixedPromptScroll(prompt), BorderLayout.CENTER);
+
+    var panel = new JPanel(new BorderLayout(10, 0));
+    panel.setBorder(new EmptyBorder(12, 12, 12, 12));
+    panel.setPreferredSize(new Dimension(0, COMPOSER_HEIGHT));
+    panel.setMinimumSize(new Dimension(0, COMPOSER_HEIGHT));
+    panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, COMPOSER_HEIGHT));
+    panel.add(promptStack, BorderLayout.CENTER);
+    panel.add(controls, BorderLayout.SOUTH);
+    return panel;
   }
 
-  public static void main(String[] args) {
-    launch(args);
+  private JComponent buildInspector() {
+    approvalsModel = new DefaultListModel<>();
+    if (toolsModel == null) {
+      toolsModel = new DefaultListModel<>();
+    }
+    logModel = new DefaultListModel<>();
+    logList = logList(logModel);
+    fullLogArea = new JTextArea();
+    fullLogArea.setEditable(false);
+    fullLogArea.setLineWrap(false);
+    fullLogArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+
+    var refresh = button("Refresh");
+    refresh.addActionListener(event -> {
+      refreshTools();
+      refreshFullLog();
+      log("INFO", "Refreshed tools");
+    });
+
+    var header = new JPanel(new BorderLayout());
+    header.add(sectionLabel("Tools"), BorderLayout.WEST);
+    header.add(refresh, BorderLayout.EAST);
+
+    var toolsPanel = new JPanel(new BorderLayout(0, 10));
+    toolsPanel.add(header, BorderLayout.NORTH);
+    toolsPanel.add(scroll(list(toolsModel)), BorderLayout.CENTER);
+
+    var topTabs = new JTabbedPane();
+    topTabs.addTab("Log", scroll(logList));
+    topTabs.addTab("Tools", toolsPanel);
+    topTabs.addTab("Full Log", scroll(fullLogArea));
+    refreshFullLog();
+
+    var top = new JPanel(new BorderLayout(0, 10));
+    top.setBorder(new EmptyBorder(12, 12, 8, 12));
+    top.setMinimumSize(new Dimension(360, 0));
+    top.add(topTabs, BorderLayout.CENTER);
+
+    var bottom = new JPanel(new BorderLayout());
+    bottom.setBorder(new EmptyBorder(8, 12, 12, 12));
+    bottom.setMinimumSize(new Dimension(360, 0));
+    bottom.add(section("Approvals"), BorderLayout.NORTH);
+    bottom.add(scroll(list(approvalsModel)), BorderLayout.CENTER);
+
+    var split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, top, bottom);
+    split.setResizeWeight(0.46);
+    split.setDividerSize(6);
+    split.setBorder(null);
+
+    var panel = new JPanel(new BorderLayout());
+    panel.setPreferredSize(new Dimension(360, 0));
+    panel.add(split, BorderLayout.CENTER);
+    refreshTools();
+    return panel;
+  }
+
+  private void showChatView() {
+    chatMessages = new JPanel();
+    chatMessages.setLayout(new BoxLayout(chatMessages, BoxLayout.Y_AXIS));
+    chatMessages.setBorder(new EmptyBorder(12, 12, 12, 12));
+    shellPanel = new ShellPanel(workspace.root(), message -> log("INFO", message));
+    shellPanel.setVisible(false);
+
+    var chatAndComposer = new JPanel(new BorderLayout());
+    chatAndComposer.add(scroll(chatMessages), BorderLayout.CENTER);
+    chatAndComposer.add(buildComposer(), BorderLayout.SOUTH);
+
+    chatAndShell = new JSplitPane(JSplitPane.VERTICAL_SPLIT, chatAndComposer, shellPanel);
+    chatAndShell.setResizeWeight(1.0);
+    chatAndShell.setDividerSize(0);
+    chatAndShell.setBorder(null);
+    setContent(chatAndShell);
+  }
+
+  private void toggleTerminal() {
+    if (shellPanel != null && shellPanel.isVisible()) {
+      minimizeTerminal();
+    } else {
+      showTerminal();
+    }
+  }
+
+  private void showTerminal() {
+    if (chatAndShell == null || shellPanel == null) {
+      return;
+    }
+    shellPanel.setVisible(true);
+    chatAndShell.setDividerSize(6);
+    refresh(chatAndShell);
+    SwingUtilities.invokeLater(() -> {
+      var available = chatAndShell.getHeight();
+      chatAndShell.setDividerLocation(Math.max(180, available - SHELL_HEIGHT));
+      shellPanel.startOrRestore();
+    });
+  }
+
+  private void minimizeTerminal() {
+    if (chatAndShell == null || shellPanel == null) {
+      return;
+    }
+    shellPanel.setVisible(false);
+    chatAndShell.setDividerSize(0);
+    chatAndShell.setDividerLocation(1.0);
+    refresh(chatAndShell);
+    log("INFO", "Shell minimized");
+  }
+
+  private void restartTerminal() {
+    if (shellPanel == null) {
+      return;
+    }
+    if (!shellPanel.isVisible()) {
+      showTerminal();
+    }
+    shellPanel.restart();
+    log("INFO", "Shell restart requested");
+  }
+
+  private void showSettingsDialog() {
+    new ProviderSettingsDialog(frame, providerSettingsController, this::refreshModelSelector, message -> log("INFO", message)).show();
+  }
+
+  private void showGeneralSettingsDialog() {
+    new GeneralSettingsDialog(frame, configService, message -> log("INFO", message)).show();
+  }
+
+  private void showDeployAgentDialog() {
+    log("INFO", "Opened Deploy Agent");
+    var dialog = new JDialog(frame, "Deploy Agent", true);
+    dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
+    dialog.addWindowListener(new java.awt.event.WindowAdapter() {
+      @Override
+      public void windowClosed(java.awt.event.WindowEvent event) {
+        log("INFO", "Closed Deploy Agent");
+      }
+    });
+
+    var body = new JPanel(new BorderLayout(0, 16));
+    body.setBorder(new EmptyBorder(18, 18, 14, 18));
+
+    var fields = new JPanel(new java.awt.GridLayout(0, 2, 8, 8));
+    var type = new JComboBox<>(new String[] {"local", "ssh"});
+    var host = new javax.swing.JTextField();
+    var user = new javax.swing.JTextField(System.getProperty("user.name", ""));
+    var path = new javax.swing.JTextField("~/.jvibe/agent");
+    var workspaceField = new javax.swing.JTextField(workspace.root().toString());
+    fields.add(new JLabel("Target"));
+    fields.add(type);
+    fields.add(new JLabel("Host"));
+    fields.add(host);
+    fields.add(new JLabel("User"));
+    fields.add(user);
+    fields.add(new JLabel("Install path"));
+    fields.add(path);
+    fields.add(new JLabel("Workspace"));
+    fields.add(workspaceField);
+    body.add(fields, BorderLayout.CENTER);
+
+    var actions = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 8, 0));
+    var cancel = button("Cancel", event -> dialog.dispose());
+    var deploy = button("Deploy", event -> {
+      var target = new DeploymentTarget(
+          type.getSelectedItem().toString(),
+          host.getText(),
+          user.getText(),
+          path.getText(),
+          workspaceField.getText());
+      var profile = new DeploymentProfile(
+          "gui",
+          target,
+          session.provider(),
+          session.model(),
+          "autonomous",
+          true,
+          "127.0.0.1",
+          8737);
+      var cliJar = Path.of("app-cli/build/libs/jvibe-cli-0.1.0-SNAPSHOT.jar").toAbsolutePath().normalize();
+      var result = "local".equals(target.type())
+          ? deploymentService.deployLocal(profile, cliJar)
+          : deploymentService.plan(profile, cliJar);
+      log(result.success() ? "INFO" : "ERROR", result.summary());
+      JOptionPane.showMessageDialog(dialog, result.summary() + "\n\n" + String.join("\n", result.commands()), "Deploy Agent", result.success() ? JOptionPane.INFORMATION_MESSAGE : JOptionPane.ERROR_MESSAGE);
+    });
+    actions.add(cancel);
+    actions.add(deploy);
+    body.add(actions, BorderLayout.SOUTH);
+
+    dialog.setContentPane(body);
+    dialog.setSize(new Dimension(620, 320));
+    dialog.setMinimumSize(new Dimension(520, 280));
+    dialog.setLocationRelativeTo(frame);
+    dialog.setVisible(true);
+  }
+
+  private JComponent themeSelector() {
+    var themes = new JComboBox<>(AppTheme.values());
+    themes.setSelectedItem(currentTheme);
+    themes.setAlignmentX(Component.LEFT_ALIGNMENT);
+    themes.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
+    themes.addActionListener(event -> {
+      var selected = (AppTheme) themes.getSelectedItem();
+      if (selected == null || selected == currentTheme) {
+        return;
+      }
+      applyRunningTheme(selected);
+      saveTheme(selected);
+      log("INFO", "Applied theme: " + selected);
+    });
+    return themes;
+  }
+
+  private void saveTheme(AppTheme theme) {
+    try {
+      var existing = configService.config();
+      configService.saveConfig(new JvibeConfig(
+          existing.defaultProvider(),
+          existing.defaultModel(),
+          existing.requireApproval(),
+          existing.maxToolIterations(),
+          theme.name(),
+          existing.autonomyMode(),
+          existing.allowedHighRiskTools(),
+          existing.gatewayEnabled(),
+          existing.gatewayHost(),
+          existing.gatewayPort(),
+          existing.deploymentProfiles()));
+    } catch (IOException e) {
+      log("ERROR", "Unable to save theme: " + e.getMessage());
+    }
+  }
+
+  private void sendPrompt() {
+    if (promptRunning) {
+      log("WARN", "Prompt already running");
+      return;
+    }
+    var typedText = prompt.getText().trim();
+    if (typedText.isEmpty() && promptFileReferences.isEmpty()) {
+      return;
+    }
+    if (modelSelector.getSelectedItem() == null) {
+      var message = "No provider model selected. Open Providers and enable a provider.";
+      appendAssistant("Error: " + message);
+      log("ERROR", message);
+      return;
+    }
+    var references = List.copyOf(promptFileReferences);
+    var text = promptTextWithReferences(typedText, references);
+    prompt.setText("");
+    clearFileReferences();
+    appendUser(typedText, references);
+    activeAssistantMessage = null;
+    activeAssistantLog = new StringBuilder();
+    activeAssistantChars = 0;
+    promptRunning = true;
+    status("Running");
+    fileLogService.prompt(session.provider(), session.model(), text);
+    refreshFullLog();
+    log("INFO", "Prompt submitted to " + session.provider() + "/" + session.model());
+
+    var worker = new SwingWorker<Void, AgentEvent>() {
+      @Override
+      protected Void doInBackground() {
+        try {
+          promptController.submit(session, text).forEach(this::publish);
+        } catch (RuntimeException e) {
+          publish(AgentEvent.error(e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
+        }
+        return null;
+      }
+
+      @Override
+      protected void process(java.util.List<AgentEvent> events) {
+        for (var event : events) {
+          handleEvent(event);
+        }
+      }
+
+      @Override
+      protected void done() {
+        promptRunning = false;
+        status("Ready");
+        try {
+          get();
+        } catch (Exception e) {
+          log("ERROR", rootMessage(e));
+        }
+      }
+    };
+    worker.execute();
+  }
+
+  private void handleEvent(AgentEvent event) {
+    switch (event.type()) {
+      case ASSISTANT_DELTA -> appendAssistantDelta(event.message());
+      case TOOL_STARTED -> log("INFO", "Tool started: " + event.message());
+      case TOOL_FINISHED -> log("INFO", "Tool finished: " + event.message());
+      case APPROVAL_REQUIRED -> {
+        approvalsModel.add(0, timestamp() + " " + event.message());
+        log("WARN", "Approval required: " + event.message());
+      }
+      case ERROR -> {
+        flushAssistantLog();
+        appendAssistant("Error: " + event.message());
+        log("ERROR", event.message());
+      }
+      case DONE -> {
+        flushAssistantLog();
+        activeAssistantMessage = null;
+        if (activeAssistantChars == 0) {
+          log("WARN", "Run completed without assistant text");
+        } else {
+          log("INFO", "Run complete");
+        }
+      }
+    }
+  }
+
+  private void refreshTools() {
+    if (session == null) {
+      return;
+    }
+    if (toolsModel == null) {
+      toolsModel = new DefaultListModel<>();
+    } else {
+      toolsModel.clear();
+    }
+    session.toolRegistry().definitions().stream()
+        .sorted(Comparator.comparing(ToolDefinition::id))
+        .map(tool -> tool.id() + "  [" + tool.risk() + "]\n" + tool.description())
+        .forEach(toolsModel::addElement);
+  }
+
+  private void appendUser(String text) {
+    appendUser(text, List.of());
+  }
+
+  private void appendUser(String text, List<Path> references) {
+    chatMessages.add(messageBubble(text, true, references));
+    refresh(chatMessages);
+  }
+
+  private void appendAssistant(String text) {
+    chatMessages.add(messageBubble(text, false, List.of()));
+    refresh(chatMessages);
+  }
+
+  private void appendAssistantDelta(String text) {
+    if (text.isBlank()) {
+      return;
+    }
+    if (activeAssistantMessage == null) {
+      var bubble = messageBubble("", false, List.of());
+      activeAssistantMessage = (JTextArea) bubble.getClientProperty("body");
+      chatMessages.add(bubble);
+    }
+    activeAssistantMessage.append(text);
+    fitMessageBody(activeAssistantMessage);
+    activeAssistantLog.append(text);
+    activeAssistantChars += text.length();
+    refresh(chatMessages);
+  }
+
+  private void flushAssistantLog() {
+    if (fileLogService != null && !activeAssistantLog.isEmpty()) {
+      fileLogService.assistant(session.provider(), session.model(), activeAssistantLog.toString());
+      activeAssistantLog.setLength(0);
+      refreshFullLog();
+    }
+  }
+
+  private JComponent messageBubble(String text, boolean user, List<Path> references) {
+    var row = new JPanel(new BorderLayout());
+    row.setOpaque(false);
+    row.setBorder(new EmptyBorder(3, 0, 3, 0));
+
+    var wrapper = new JPanel(new BorderLayout());
+    wrapper.setOpaque(true);
+    wrapper.setBackground(messageBackground(user));
+    wrapper.setBorder(new EmptyBorder(6, 8, 6, 8));
+
+    var body = new JTextArea(text);
+    body.setEditable(false);
+    body.setLineWrap(true);
+    body.setWrapStyleWord(true);
+    body.setOpaque(false);
+    body.setBorder(null);
+    body.putClientProperty("messageWrapper", wrapper);
+    if (!references.isEmpty()) {
+      wrapper.add(historyReferencePanel(references), BorderLayout.NORTH);
+    }
+    wrapper.add(body, BorderLayout.CENTER);
+    row.add(wrapper, user ? BorderLayout.EAST : BorderLayout.WEST);
+    row.putClientProperty("body", body);
+    row.setAlignmentX(Component.LEFT_ALIGNMENT);
+    fitMessageBody(body);
+    return row;
+  }
+
+  private void fitMessageBody(JTextArea body) {
+    var metrics = body.getFontMetrics(body.getFont());
+    var contentWidth = 32;
+    for (var line : body.getText().split("\\R", -1)) {
+      contentWidth = Math.max(contentWidth, metrics.stringWidth(line) + 2);
+    }
+    var transcriptWidth = chatMessages == null ? 0 : chatMessages.getWidth();
+    var maxWidth = transcriptWidth > 0
+        ? Math.min(MESSAGE_MAX_WIDTH, Math.max(280, (int) (transcriptWidth * MESSAGE_WIDTH_RATIO)))
+        : MESSAGE_MAX_WIDTH;
+    var width = Math.min(maxWidth, contentWidth);
+    body.setSize(new Dimension(width, Short.MAX_VALUE));
+    var preferred = body.getPreferredSize();
+    var textHeight = Math.max(preferred.height, estimatedTextHeight(body, width));
+    body.setPreferredSize(new Dimension(width, textHeight));
+    if (body.getClientProperty("messageWrapper") instanceof JComponent wrapper) {
+      var wrapperHeight = textHeight + 12 + wrapperExtraHeight(wrapper);
+      wrapper.setPreferredSize(new Dimension(width + 16, wrapperHeight));
+      wrapper.setMaximumSize(new Dimension(width + 16, wrapperHeight));
+      if (wrapper.getParent() instanceof JComponent row) {
+        var insets = row.getInsets();
+        var rowHeight = wrapperHeight + insets.top + insets.bottom;
+        row.setPreferredSize(new Dimension(0, rowHeight));
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, rowHeight));
+        row.revalidate();
+      }
+    }
+  }
+
+  private int wrapperExtraHeight(JComponent wrapper) {
+    var extra = 0;
+    for (var component : wrapper.getComponents()) {
+      if (!(component instanceof JTextArea)) {
+        extra += component.getPreferredSize().height + 4;
+      }
+    }
+    return extra;
+  }
+
+  private int estimatedTextHeight(JTextArea body, int width) {
+    var metrics = body.getFontMetrics(body.getFont());
+    var usableWidth = Math.max(1, width - 4);
+    var lines = 0;
+    for (var line : body.getText().split("\\R", -1)) {
+      var lineWidth = Math.max(1, metrics.stringWidth(line));
+      lines += Math.max(1, (int) Math.ceil(lineWidth / (double) usableWidth));
+    }
+    return metrics.getHeight() * lines + 6;
+  }
+
+  private Color messageBackground(boolean user) {
+    var base = UIManager.getColor("Panel.background");
+    var tint = UIManager.getColor(user ? "TextArea.selectionBackground" : "TextArea.background");
+    if (base == null) {
+      base = Color.GRAY;
+    }
+    if (tint == null) {
+      tint = base;
+    }
+    return blend(base, tint, user ? 0.18 : 0.08);
+  }
+
+  private static Color blend(Color base, Color tint, double amount) {
+    var inverse = 1.0 - amount;
+    return new Color(
+        (int) Math.round(base.getRed() * inverse + tint.getRed() * amount),
+        (int) Math.round(base.getGreen() * inverse + tint.getGreen() * amount),
+        (int) Math.round(base.getBlue() * inverse + tint.getBlue() * amount));
+  }
+
+  private JComponent panel(String title, String subtitle, JComponent body) {
+    var panel = new JPanel(new BorderLayout(0, 12));
+    panel.setBorder(new EmptyBorder(18, 18, 18, 18));
+    var header = new JPanel();
+    header.setLayout(new BoxLayout(header, BoxLayout.Y_AXIS));
+    header.add(label(title, 22, Font.BOLD));
+    header.add(label(subtitle, 12, Font.PLAIN));
+    panel.add(header, BorderLayout.NORTH);
+    panel.add(body, BorderLayout.CENTER);
+    return panel;
+  }
+
+  private JButton nav(String label, Runnable action) {
+    var button = button(label);
+    button.setHorizontalAlignment(JButton.LEFT);
+    button.addActionListener(event -> action.run());
+    return button;
+  }
+
+  private JButton button(String text) {
+    var button = new JButton(text);
+    button.setAlignmentX(Component.LEFT_ALIGNMENT);
+    return button;
+  }
+
+  private JButton button(String text, java.awt.event.ActionListener listener) {
+    var button = button(text);
+    button.addActionListener(listener);
+    return button;
+  }
+
+  static JButton terminalButton(java.awt.event.ActionListener listener) {
+    var button = new JButton(new TerminalIcon());
+    button.setToolTipText("Open terminal");
+    button.setFocusable(false);
+    button.setPreferredSize(new Dimension(32, 28));
+    button.setMinimumSize(new Dimension(32, 28));
+    button.addActionListener(listener);
+    return button;
+  }
+
+  JButton shellToggleButton() {
+    var button = terminalButton(event -> toggleTerminal());
+    var menu = new JPopupMenu();
+    var restart = menu.add("Restart Shell");
+    restart.addActionListener(event -> restartTerminal());
+    button.setComponentPopupMenu(menu);
+    return button;
+  }
+
+  private JLabel label(String text, int size, int style) {
+    var label = new JLabel(text);
+    label.setFont(label.getFont().deriveFont(style, size));
+    return label;
+  }
+
+  private JComponent section(String text) {
+    var panel = new JPanel(new BorderLayout());
+    panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+    panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 18));
+    panel.add(sectionLabel(text), BorderLayout.WEST);
+    return panel;
+  }
+
+  private JLabel sectionLabel(String text) {
+    var label = label(text.toUpperCase(), 11, Font.BOLD);
+    label.setForeground(UIManager.getColor("Label.disabledForeground"));
+    return label;
+  }
+
+  private JList<String> list(DefaultListModel<String> model) {
+    var list = new JList<>(model);
+    list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+    return list;
+  }
+
+  private JList<LogEntry> logList(DefaultListModel<LogEntry> model) {
+    var list = new JList<LogEntry>(model) {
+      @Override
+      public String getToolTipText(MouseEvent event) {
+        var index = locationToIndex(event.getPoint());
+        if (index < 0) {
+          return null;
+        }
+        var bounds = getCellBounds(index, index);
+        if (bounds == null || !bounds.contains(event.getPoint())) {
+          return null;
+        }
+        var entry = getModel().getElementAt(index);
+        return entry.time() + "  " + entry.level();
+      }
+    };
+    list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+    list.setCellRenderer(new LogEntryRenderer());
+    ToolTipManager.sharedInstance().registerComponent(list);
+    return list;
+  }
+
+  private JScrollPane scroll(Component component) {
+    var scroll = new JScrollPane(component);
+    scroll.setBorder(BorderFactory.createEmptyBorder());
+    return scroll;
+  }
+
+  private JScrollPane fixedPromptScroll(Component component) {
+    var scroll = scroll(component);
+    var size = new Dimension(0, PROMPT_INPUT_HEIGHT);
+    scroll.setMinimumSize(size);
+    scroll.setPreferredSize(size);
+    scroll.setMaximumSize(new Dimension(Integer.MAX_VALUE, PROMPT_INPUT_HEIGHT));
+    return scroll;
+  }
+
+  private void addFileReference(Path path) {
+    var normalized = path.toAbsolutePath().normalize();
+    if (promptFileReferences.contains(normalized)) {
+      prompt.requestFocusInWindow();
+      return;
+    }
+    promptFileReferences.add(normalized);
+    refreshFileReferences();
+    prompt.requestFocusInWindow();
+    log("INFO", "Added file reference: " + normalized);
+  }
+
+  private void clearFileReferences() {
+    promptFileReferences.clear();
+    refreshFileReferences();
+  }
+
+  private void removeFileReference(Path path) {
+    promptFileReferences.remove(path);
+    refreshFileReferences();
+    prompt.requestFocusInWindow();
+  }
+
+  private void refreshFileReferences() {
+    if (fileReferencePanel == null) {
+      return;
+    }
+    fileReferencePanel.removeAll();
+    for (var path : promptFileReferences) {
+      fileReferencePanel.add(fileReferenceChip(path));
+    }
+    refresh(fileReferencePanel);
+  }
+
+  JButton fileReferenceChip(Path path) {
+    var button = new JButton(filename(path) + " x");
+    button.setToolTipText(path.toString());
+    button.setFocusable(false);
+    button.setMargin(new Insets(2, 8, 2, 8));
+    button.addActionListener(event -> removeFileReference(path));
+    return button;
+  }
+
+  private JPanel historyReferencePanel(List<Path> references) {
+    var panel = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 4, 0));
+    panel.setOpaque(false);
+    for (var path : references) {
+      var label = new JLabel(filename(path));
+      label.setToolTipText(path.toString());
+      label.setOpaque(true);
+      label.setBackground(messageBackground(true));
+      label.setBorder(BorderFactory.createCompoundBorder(
+          BorderFactory.createLineBorder(blend(messageBackground(true), UIManager.getColor("Label.foreground"), 0.18)),
+          new EmptyBorder(2, 8, 2, 8)));
+      panel.add(label);
+    }
+    return panel;
+  }
+
+  private String promptTextWithReferences(String text, List<Path> references) {
+    if (references.isEmpty()) {
+      return text;
+    }
+    var builder = new StringBuilder("File references:\n");
+    for (var path : references) {
+      builder.append("- ").append(filename(path)).append(": ").append(path).append('\n');
+    }
+    if (!text.isBlank()) {
+      builder.append('\n').append(text);
+    }
+    return builder.toString();
+  }
+
+  private String fileReferenceSummary(List<Path> references) {
+    return references.stream()
+        .map(this::filename)
+        .collect(java.util.stream.Collectors.joining(", ", "File references: ", ""));
+  }
+
+  private String filename(Path path) {
+    var name = path.getFileName();
+    return name == null ? path.toString() : name.toString();
+  }
+
+  private Component separator() {
+    return Box.createVerticalStrut(14);
+  }
+
+  private void setContent(JComponent component) {
+    content.removeAll();
+    content.add(component, BorderLayout.CENTER);
+    refresh(content);
+  }
+
+  private void log(String level, String message) {
+    if (fileLogService != null) {
+      fileLogService.event(level, message);
+      refreshFullLog();
+    }
+    if (logModel != null) {
+      logModel.addElement(new LogEntry(timestamp(), level, message));
+      logList.ensureIndexIsVisible(logModel.size() - 1);
+    }
+  }
+
+  private void refreshFullLog() {
+    if (fullLogArea == null || fileLogService == null) {
+      return;
+    }
+    fullLogArea.setText(fileLogService.readAll());
+    fullLogArea.setCaretPosition(fullLogArea.getDocument().getLength());
+  }
+
+  private void status(String message) {
+    if (message != null && !message.isBlank()) {
+      log("INFO", "Status: " + message);
+    }
+  }
+
+  private String timestamp() {
+    return LocalTime.now().format(TIME);
+  }
+
+  private int shortcutMask() {
+    return java.awt.Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx();
+  }
+
+  private void refresh(JComponent component) {
+    component.revalidate();
+    component.repaint();
+  }
+
+  private void applyRunningTheme(AppTheme theme) {
+    currentTheme = theme;
+    applyTheme(theme);
+    if (frame != null) {
+      SwingUtilities.updateComponentTreeUI(frame);
+    }
+  }
+
+  private static String rootMessage(Exception e) {
+    var cause = e.getCause() == null ? e : e.getCause();
+    return cause.getMessage() == null ? cause.getClass().getSimpleName() : cause.getMessage();
+  }
+
+  private record LogEntry(String time, String level, String message) {}
+
+  private static final class TerminalIcon implements Icon {
+    private static final int WIDTH = 16;
+    private static final int HEIGHT = 14;
+
+    @Override
+    public void paintIcon(Component component, Graphics graphics, int x, int y) {
+      var g = (Graphics2D) graphics.create();
+      try {
+        g.setColor(component.getForeground());
+        g.drawRoundRect(x, y + 1, WIDTH - 1, HEIGHT - 2, 3, 3);
+        g.drawLine(x + 4, y + 5, x + 7, y + 7);
+        g.drawLine(x + 7, y + 7, x + 4, y + 9);
+        g.drawLine(x + 9, y + 10, x + 13, y + 10);
+      } finally {
+        g.dispose();
+      }
+    }
+
+    @Override
+    public int getIconWidth() {
+      return WIDTH;
+    }
+
+    @Override
+    public int getIconHeight() {
+      return HEIGHT;
+    }
+  }
+
+  private static final class LogEntryRenderer extends JLabel implements ListCellRenderer<LogEntry> {
+    LogEntryRenderer() {
+      setOpaque(true);
+      setBorder(new EmptyBorder(5, 8, 5, 8));
+    }
+
+    @Override
+    public Component getListCellRendererComponent(
+        JList<? extends LogEntry> list,
+        LogEntry value,
+        int index,
+        boolean selected,
+        boolean cellHasFocus) {
+      setText(value.message());
+      setFont(list.getFont());
+      setBackground(selected ? list.getSelectionBackground() : list.getBackground());
+      if (selected) {
+        setForeground(list.getSelectionForeground());
+      } else {
+        setForeground(switch (value.level()) {
+          case "WARN" -> UIManager.getColor("Actions.Yellow");
+          case "ERROR" -> UIManager.getColor("Actions.Red");
+          default -> list.getForeground();
+        });
+        if (getForeground() == null) {
+          setForeground(list.getForeground());
+        }
+      }
+      return this;
+    }
+  }
+
+  enum AppTheme {
+    FLATLAF_DARK("FlatLaf Dark", FlatDarkLaf::new),
+    FLATLAF_LIGHT("FlatLaf Light", FlatLightLaf::new),
+    INTELLIJ_LIGHT("IntelliJ Light", FlatIntelliJLaf::new),
+    DARCULA("Darcula", FlatDarculaLaf::new),
+    ARC_DARK("Arc Dark", FlatArcDarkIJTheme::new),
+    DRACULA("Dracula", FlatDraculaIJTheme::new),
+    GRUVBOX_DARK("Gruvbox Dark", FlatGruvboxDarkHardIJTheme::new),
+    MONOKAI_PRO("Monokai Pro", FlatMonokaiProIJTheme::new),
+    NORD("Nord", FlatNordIJTheme::new),
+    ONE_DARK("One Dark", FlatOneDarkIJTheme::new),
+    SOLARIZED_DARK("Solarized Dark", FlatSolarizedDarkIJTheme::new),
+    SOLARIZED_LIGHT("Solarized Light", FlatSolarizedLightIJTheme::new),
+    GITHUB_DARK("GitHub Dark", FlatMTGitHubDarkIJTheme::new),
+    GITHUB_LIGHT("GitHub Light", FlatMTGitHubIJTheme::new),
+    HIGH_CONTRAST("High Contrast", FlatHighContrastIJTheme::new);
+
+    private final String label;
+    private final Supplier<javax.swing.LookAndFeel> supplier;
+
+    AppTheme(String label, Supplier<javax.swing.LookAndFeel> supplier) {
+      this.label = label;
+      this.supplier = supplier;
+    }
+
+    javax.swing.LookAndFeel create() {
+      return supplier.get();
+    }
+
+    static AppTheme fromConfig(String value) {
+      if (value != null) {
+        try {
+          return AppTheme.valueOf(value);
+        } catch (IllegalArgumentException ignored) {
+          // Fall through to the default theme.
+        }
+      }
+      return FLATLAF_DARK;
+    }
+
+    @Override
+    public String toString() {
+      return label;
+    }
   }
 }

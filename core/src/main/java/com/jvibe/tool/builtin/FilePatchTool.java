@@ -14,7 +14,15 @@ public final class FilePatchTool {
 
   public static RegisteredTool registered() {
     return new RegisteredTool(
-        new ToolDefinition("file.patch", "Patch file", "Replace text in a UTF-8 file inside the workspace.", Map.of("type", "object"), ApprovalRequest.Risk.HIGH),
+        new ToolDefinition(
+            "file_patch",
+            "Patch file",
+            "Replace text in a UTF-8 file inside the workspace.",
+            ToolSchemas.object(Map.of(
+                "path", ToolSchemas.string("Relative file path under the workspace."),
+                "search", ToolSchemas.string("Exact text to replace."),
+                "replacement", ToolSchemas.string("Replacement text.")), "path", "search", "replacement"),
+            ApprovalRequest.Risk.HIGH),
         FilePatchTool::execute);
   }
 

@@ -1,6 +1,7 @@
 package com.jvibe.tool.dynamic;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.jvibe.tool.ToolCall;
@@ -18,11 +19,11 @@ class DynamicToolRegistryTest {
 
   @Test
   void compilesLoadsAndRegistersSimpleJavaTool() throws Exception {
-    var toolDir = temp.resolve("user-tools").resolve("hello.tool");
+    var toolDir = temp.resolve("user-tools").resolve("hello_tool");
     Files.createDirectories(toolDir.resolve("src").resolve("sample"));
     Files.writeString(toolDir.resolve("tool.json"), """
         {
-          "id": "hello.tool",
+          "id": "hello_tool",
           "name": "Hello Tool",
           "description": "Says hello",
           "version": "0.1.0",
@@ -47,7 +48,7 @@ class DynamicToolRegistryTest {
 
         public final class HelloTool implements ToolPlugin {
           public ToolDefinition definition() {
-            return new ToolDefinition("hello.tool", "Hello Tool", "Says hello", Map.of("type", "object"), ApprovalRequest.Risk.LOW);
+            return new ToolDefinition("hello_tool", "Hello Tool", "Says hello", Map.of("type", "object"), ApprovalRequest.Risk.LOW);
           }
 
           public ToolResult execute(ToolCall call, ToolPluginContext context) {
@@ -60,11 +61,25 @@ class DynamicToolRegistryTest {
     var dynamic = new DynamicToolRegistry(temp.resolve("user-tools"), new ToolBuildService());
     dynamic.buildLoadAndRegister(toolDir, registry);
 
-    assertTrue(registry.find("hello.tool").isPresent());
+    assertTrue(registry.find("hello_tool").isPresent());
     var result = registry.execute(
-        new ToolCall("hello.tool", Map.of("name", "jvibe")),
+        new ToolCall("hello_tool", Map.of("name", "jvibe")),
         ToolExecutionContext.defaults(new Workspace(temp)));
     assertTrue(result.success());
     assertEquals("hello jvibe", result.payload().get("message"));
+  }
+
+  @Test
+  void rejectsProviderIncompatibleManifestId() {
+    var error = assertThrows(IllegalArgumentException.class, () -> ToolManifest.parse("""
+        {
+          "id": "hello.tool",
+          "name": "Hello Tool",
+          "description": "Says hello",
+          "entryClass": "sample.HelloTool"
+        }
+        """));
+
+    assertTrue(error.getMessage().contains("^[a-zA-Z0-9_-]+$"));
   }
 }

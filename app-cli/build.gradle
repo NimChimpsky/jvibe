@@ -4,6 +4,7 @@ plugins {
 
 dependencies {
   implementation project(':core')
+  implementation "io.avaje:avaje-inject:${avajeInjectVersion}"
   runtimeOnly "io.avaje:avaje-simple-logger:${avajeSimpleLoggerVersion}"
 }
 

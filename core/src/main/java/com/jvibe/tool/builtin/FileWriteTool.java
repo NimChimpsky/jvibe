@@ -14,7 +14,14 @@ public final class FileWriteTool {
 
   public static RegisteredTool registered() {
     return new RegisteredTool(
-        new ToolDefinition("file.write", "Write file", "Write a UTF-8 file inside the workspace.", Map.of("type", "object"), ApprovalRequest.Risk.HIGH),
+        new ToolDefinition(
+            "file_write",
+            "Write file",
+            "Write a UTF-8 file inside the workspace.",
+            ToolSchemas.object(Map.of(
+                "path", ToolSchemas.string("Relative file path under the workspace."),
+                "content", ToolSchemas.string("Full file content to write.")), "path", "content"),
+            ApprovalRequest.Risk.HIGH),
         FileWriteTool::execute);
   }
 

@@ -1,19 +1,27 @@
 plugins {
   id 'application'
-  id 'org.openjfx.javafxplugin' version '0.1.0'
 }
 
 dependencies {
   implementation project(':core')
+  implementation "io.avaje:avaje-inject:${avajeInjectVersion}"
+  implementation 'com.formdev:flatlaf:3.7.1'
+  implementation 'com.formdev:flatlaf-intellij-themes:3.7.1'
+  implementation 'org.jetbrains.jediterm:jediterm-core:3.66'
+  implementation 'org.jetbrains.jediterm:jediterm-ui:3.66'
+  implementation 'org.jetbrains.pty4j:pty4j:0.13.12'
+  annotationProcessor "io.avaje:avaje-inject-generator:${avajeInjectVersion}"
   runtimeOnly "io.avaje:avaje-simple-logger:${avajeSimpleLoggerVersion}"
 }
 
-javafx {
-  version = '21.0.11'
-  modules = ['javafx.controls']
+configurations.configureEach {
+  resolutionStrategy.force 'org.slf4j:slf4j-api:2.0.17'
+  resolutionStrategy.force 'org.jetbrains:annotations:24.0.1'
+  resolutionStrategy.force 'org.jetbrains.kotlin:kotlin-stdlib:2.1.21'
 }
 
 application {
+  applicationName = 'jvibe'
   mainClass = 'com.jvibe.gui.JvibeGui'
 }
 
@@ -22,6 +30,12 @@ tasks.named('jar') {
   manifest {
     attributes 'Main-Class': application.mainClass.get()
   }
-  duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-  from configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+}
+
+tasks.named('distZip') {
+  archiveFileName = 'jvibe.zip'
+}
+
+tasks.named('distTar') {
+  archiveFileName = 'jvibe.tar'
 }

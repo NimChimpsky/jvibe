@@ -11,7 +11,7 @@ public final class ToolManagementTool {
 
   public static RegisteredTool registered(String id) {
     return new RegisteredTool(
-        new ToolDefinition(id, id, "Manage dynamic Java tools.", Map.of("type", "object"), risk(id)),
+        new ToolDefinition(id, id, "Manage dynamic Java tools.", ToolSchemas.object(), risk(id)),
         (call, context) -> ToolResult.success(
             call.id(),
             Map.of("tool", id, "workspace", context.workspace().root().toString()),
@@ -20,7 +20,7 @@ public final class ToolManagementTool {
 
   private static ApprovalRequest.Risk risk(String id) {
     return switch (id) {
-      case "tool.list", "tool.inspect" -> ApprovalRequest.Risk.LOW;
+      case "tool_list", "tool_inspect" -> ApprovalRequest.Risk.LOW;
       default -> ApprovalRequest.Risk.HIGH;
     };
   }

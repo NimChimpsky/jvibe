@@ -6,9 +6,14 @@ import jakarta.inject.Singleton;
 
 @Singleton
 public final class ConfigService {
-  private static final String DEFAULT_SYSTEM_PROMPT = """
+  private static final String LEGACY_SYSTEM_PROMPT = """
       You are jvibe, a Java-based coding agent. Be direct, inspect the workspace before changing files,
       prefer small safe edits, and ask for approval before risky tool actions.
+      """;
+  private static final String DEFAULT_SYSTEM_PROMPT = """
+      You are jvibe, a Java-based coding agent. Be direct and answer simple conversation without tools.
+      Use tools only when the user asks for workspace inspection, code changes, command execution, or current repo state.
+      Prefer small safe edits, and ask for approval before risky tool actions.
       """;
 
   private final JvibePaths paths;
@@ -38,10 +43,29 @@ public final class ConfigService {
     }
     if (Files.notExists(paths.systemPrompt())) {
       Files.writeString(paths.systemPrompt(), DEFAULT_SYSTEM_PROMPT);
+    } else if (Files.readString(paths.systemPrompt()).equals(LEGACY_SYSTEM_PROMPT)) {
+      Files.writeString(paths.systemPrompt(), DEFAULT_SYSTEM_PROMPT);
     }
   }
 
   public String systemPrompt() throws IOException {
     return Files.readString(paths.systemPrompt());
+  }
+
+  public void saveSystemPrompt(String prompt) throws IOException {
+    bootstrap();
+    Files.writeString(paths.systemPrompt(), prompt == null ? "" : prompt);
+  }
+
+  public JvibeConfig config() throws IOException {
+    if (Files.notExists(paths.config())) {
+      bootstrap();
+    }
+    return JvibeConfig.fromJson(Files.readString(paths.config()));
+  }
+
+  public void saveConfig(JvibeConfig config) throws IOException {
+    bootstrap();
+    Files.writeString(paths.config(), config.toJson());
   }
 }
