@@ -12,8 +12,9 @@ import com.jvibe.session.AgentSession;
 import com.jvibe.tool.RegisteredTool;
 import com.jvibe.tool.ToolCall;
 import com.jvibe.tool.ToolDefinition;
+import com.jvibe.tool.ToolRegistry;
 import com.jvibe.tool.ToolResult;
-import com.jvibe.tool.builtin.BuiltinTools;
+import com.jvibe.tool.builtin.FileListTool;
 import com.jvibe.workspace.Workspace;
 import java.nio.file.Path;
 import java.util.List;
@@ -55,7 +56,9 @@ class AgentRunnerTest {
       }
     };
 
-    var session = new AgentSession(new Workspace(temp), BuiltinTools.registry());
+    var registry = new ToolRegistry();
+    registry.register(FileListTool.registered());
+    var session = new AgentSession(new Workspace(temp), registry);
     var events = new AgentRunner(provider, "system", 10).run(session, "list files").toList();
 
     assertTrue(events.stream().anyMatch(event -> event.type() == com.jvibe.events.AgentEvent.Type.TOOL_FINISHED));

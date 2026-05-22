@@ -1,6 +1,7 @@
 package com.jvibe.tool.dynamic;
 
 import com.jvibe.approval.ApprovalRequest;
+import com.jvibe.config.JvibePaths;
 import com.jvibe.git.GitService;
 import com.jvibe.tool.RegisteredTool;
 import com.jvibe.tool.ToolCall;
@@ -17,16 +18,30 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
 
+@Singleton
 public final class DynamicToolRegistry {
   private static final Logger LOGGER = LoggerFactory.getLogger(DynamicToolRegistry.class);
   private final Path userToolsDir;
   private final ToolBuildService buildService;
+  private final GitService gitService;
   private final Map<String, LoadedDynamicTool> loaded = new LinkedHashMap<>();
 
+  @Inject
+  public DynamicToolRegistry(JvibePaths paths, ToolBuildService buildService, GitService gitService) {
+    this(paths.tools(), buildService, gitService);
+  }
+
   public DynamicToolRegistry(Path userToolsDir, ToolBuildService buildService) {
+    this(userToolsDir, buildService, new GitService());
+  }
+
+  DynamicToolRegistry(Path userToolsDir, ToolBuildService buildService, GitService gitService) {
     this.userToolsDir = userToolsDir;
     this.buildService = buildService;
+    this.gitService = gitService;
   }
 
   public Map<String, LoadedDynamicTool> loaded() {
@@ -86,7 +101,7 @@ public final class DynamicToolRegistry {
       var pluginContext = new ToolPluginContext(
           context.workspace(),
           registry,
-          new GitService(),
+          gitService,
           LOGGER,
           new AtomicBoolean(context.cancelled().get()));
       return loadedTool.plugin().execute(call, pluginContext);

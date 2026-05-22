@@ -12,7 +12,7 @@ import java.util.Map;
 public final class GitCommitTool {
   private GitCommitTool() {}
 
-  public static RegisteredTool registered() {
+  public static RegisteredTool registered(GitService git) {
     return new RegisteredTool(
         new ToolDefinition(
             "git_commit",
@@ -20,12 +20,11 @@ public final class GitCommitTool {
             "Stage all current changes and create a Git commit.",
             ToolSchemas.object(Map.of("message", ToolSchemas.string("Commit message.")), "message"),
             ApprovalRequest.Risk.HIGH),
-        GitCommitTool::execute);
+        (call, context) -> execute(call, context, git));
   }
 
-  static ToolResult execute(ToolCall call, ToolExecutionContext context) throws Exception {
+  static ToolResult execute(ToolCall call, ToolExecutionContext context, GitService git) throws Exception {
     var message = ToolArguments.string(call.arguments(), "message");
-    var git = new GitService();
     var add = git.run(context.workspace().root(), "add", "-A");
     if (add.exitCode() != 0) {
       return ToolResult.failure(call.id(), add.stderr());

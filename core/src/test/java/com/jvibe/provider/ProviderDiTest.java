@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.jvibe.agent.AgentRunner;
+import com.jvibe.session.SessionFactory;
+import com.jvibe.tool.ToolRegistryFactory;
 import io.avaje.inject.BeanScope;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -15,6 +17,8 @@ class ProviderDiTest {
       assertNotNull(scope.get(ProviderRegistry.class));
       assertNotNull(scope.get(ProviderConfigService.class));
       assertNotNull(scope.get(AgentRunner.class));
+      assertNotNull(scope.get(ToolRegistryFactory.class));
+      assertNotNull(scope.get(SessionFactory.class));
     }
   }
 

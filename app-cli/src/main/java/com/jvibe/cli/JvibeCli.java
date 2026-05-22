@@ -5,9 +5,9 @@ import com.jvibe.config.ConfigService;
 import com.jvibe.deployment.DeploymentProfile;
 import com.jvibe.deployment.DeploymentService;
 import com.jvibe.deployment.DeploymentTarget;
-import com.jvibe.provider.ProviderConfigService;
 import com.jvibe.session.AgentSession;
-import com.jvibe.tool.builtin.BuiltinTools;
+import com.jvibe.session.SessionFactory;
+import com.jvibe.tool.ToolRegistryFactory;
 import com.jvibe.workspace.Workspace;
 import io.avaje.inject.BeanScope;
 import java.nio.file.Path;
@@ -19,12 +19,15 @@ public final class JvibeCli {
   public static void main(String[] args) throws Exception {
     try (var scope = BeanScope.builder().build()) {
       var config = scope.get(ConfigService.class);
-      var providerConfig = scope.get(ProviderConfigService.class);
       var runner = scope.get(AgentRunner.class);
+      var sessionFactory = scope.get(SessionFactory.class);
+      var toolRegistryFactory = scope.get(ToolRegistryFactory.class);
       config.bootstrap();
 
       if (args.length > 0 && "tools".equals(args[0])) {
-        BuiltinTools.registry().definitions().forEach(tool -> System.out.println(tool.id() + " - " + tool.description()));
+        toolRegistryFactory.create(new Workspace(Path.of(System.getProperty("user.dir"))))
+            .definitions()
+            .forEach(tool -> System.out.println(tool.id() + " - " + tool.description()));
         return;
       }
       if (args.length > 0 && "deploy".equals(args[0])) {
@@ -32,18 +35,15 @@ public final class JvibeCli {
         return;
       }
       if (args.length > 0 && "gateway".equals(args[0])) {
-        gateway(args, runner, providerConfig);
+        gateway(args, runner, sessionFactory);
         return;
       }
       if (args.length > 0 && "daemon".equals(args[0])) {
-        daemon(args, runner, providerConfig, config);
+        daemon(args, runner, sessionFactory, config);
         return;
       }
 
-      var workspace = new Workspace(Path.of(System.getProperty("user.dir")));
-      var session = new AgentSession(workspace, BuiltinTools.registry());
-      var settings = providerConfig.settings(providerConfig.defaultProvider());
-      session.selectModel(settings.provider(), settings.selectedModel());
+      var session = sessionFactory.create(Path.of(System.getProperty("user.dir")));
 
       if (args.length > 0 && "run".equals(args[0])) {
         var prompt = args.length > 1 ? args[1] : "";
@@ -68,7 +68,7 @@ public final class JvibeCli {
           break;
         }
         if (line.equals("/tools")) {
-          BuiltinTools.registry().definitions().forEach(tool -> System.out.println(tool.id() + " - " + tool.description()));
+          session.toolRegistry().definitions().forEach(tool -> System.out.println(tool.id() + " - " + tool.description()));
           continue;
         }
         runner.run(session, line).forEach(event -> System.out.println(event.message()));
@@ -76,11 +76,11 @@ public final class JvibeCli {
     }
   }
 
-  private static void gateway(String[] args, AgentRunner runner, ProviderConfigService providerConfig) throws Exception {
+  private static void gateway(String[] args, AgentRunner runner, SessionFactory sessionFactory) throws Exception {
     var host = option(args, "--host", "127.0.0.1");
     var port = Integer.parseInt(option(args, "--port", "8737"));
     var workspace = Path.of(option(args, "--workspace", System.getProperty("user.dir")));
-    new GatewayServer(runner, providerConfig, host, port, workspace).start();
+    new GatewayServer(runner, sessionFactory, host, port, workspace).start();
     System.out.println("Gateway listening on http://" + host + ":" + port);
     Thread.currentThread().join();
   }
@@ -88,12 +88,12 @@ public final class JvibeCli {
   private static void daemon(
       String[] args,
       AgentRunner runner,
-      ProviderConfigService providerConfig,
+      SessionFactory sessionFactory,
       ConfigService config) throws Exception {
     var cfg = config.config();
     var workspace = Path.of(option(args, "--workspace", System.getProperty("user.dir")));
     if (cfg.gatewayEnabled()) {
-      new GatewayServer(runner, providerConfig, cfg.gatewayHost(), cfg.gatewayPort(), workspace).start();
+      new GatewayServer(runner, sessionFactory, cfg.gatewayHost(), cfg.gatewayPort(), workspace).start();
       System.out.println("Daemon gateway listening on http://" + cfg.gatewayHost() + ":" + cfg.gatewayPort());
     } else {
       System.out.println("Daemon started without gateway");

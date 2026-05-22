@@ -12,14 +12,14 @@ import java.util.Map;
 public final class GitStatusTool {
   private GitStatusTool() {}
 
-  public static RegisteredTool registered() {
+  public static RegisteredTool registered(GitService git) {
     return new RegisteredTool(
         new ToolDefinition("git_status", "Git status", "Show short Git status.", ToolSchemas.object(), ApprovalRequest.Risk.LOW),
-        GitStatusTool::execute);
+        (call, context) -> execute(call, context, git));
   }
 
-  static ToolResult execute(ToolCall call, ToolExecutionContext context) throws Exception {
-    var result = new GitService().run(context.workspace().root(), "status", "--short", "--branch");
+  static ToolResult execute(ToolCall call, ToolExecutionContext context, GitService git) throws Exception {
+    var result = git.run(context.workspace().root(), "status", "--short", "--branch");
     return ToolResult.success(call.id(), Map.of("exitCode", result.exitCode(), "stdout", result.stdout(), "stderr", result.stderr()), "Git status");
   }
 }

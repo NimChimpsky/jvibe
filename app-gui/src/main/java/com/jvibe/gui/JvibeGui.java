@@ -32,8 +32,8 @@ import com.jvibe.gui.settings.ProviderSettingsDialog;
 import com.jvibe.gui.terminal.ShellPanel;
 import com.jvibe.logging.FileLogService;
 import com.jvibe.session.AgentSession;
+import com.jvibe.session.SessionFactory;
 import com.jvibe.tool.ToolDefinition;
-import com.jvibe.tool.builtin.BuiltinTools;
 import com.jvibe.workspace.Workspace;
 import io.avaje.inject.BeanScope;
 import java.awt.BorderLayout;
@@ -91,6 +91,7 @@ public final class JvibeGui {
   private PromptController promptController;
   private DeploymentService deploymentService;
   private FileLogService fileLogService;
+  private SessionFactory sessionFactory;
   private Workspace workspace;
   private AgentSession session;
   private JFrame frame;
@@ -144,6 +145,7 @@ public final class JvibeGui {
     promptController = scope.get(PromptController.class);
     deploymentService = scope.get(DeploymentService.class);
     fileLogService = scope.get(FileLogService.class);
+    sessionFactory = scope.get(SessionFactory.class);
     configService.bootstrap();
     currentTheme = AppTheme.fromConfig(configService.config().theme());
     applyRunningTheme(currentTheme);
@@ -176,7 +178,7 @@ public final class JvibeGui {
 
   private void initialiseCore(Path root) throws Exception {
     workspace = new Workspace(root);
-    session = new AgentSession(workspace, BuiltinTools.registry());
+    session = sessionFactory.create(workspace);
     refreshModelSelector();
     refreshTools();
   }

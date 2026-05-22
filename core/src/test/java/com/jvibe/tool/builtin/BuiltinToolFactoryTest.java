@@ -2,16 +2,20 @@ package com.jvibe.tool.builtin;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.jvibe.tool.ToolRegistryFactory;
 import com.jvibe.tool.ToolDefinition;
+import com.jvibe.workspace.Workspace;
+import io.avaje.inject.BeanScope;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
-class BuiltinToolsTest {
+class BuiltinToolFactoryTest {
   @Test
   void exposesMvpToolIds() {
-    var ids = BuiltinTools.registry().definitions().stream().map(definition -> definition.id()).collect(Collectors.toSet());
+    var ids = registry().definitions().stream().map(definition -> definition.id()).collect(Collectors.toSet());
     assertTrue(ids.containsAll(Set.of(
         "shell_run",
         "file_read",
@@ -36,7 +40,7 @@ class BuiltinToolsTest {
 
   @Test
   void exposesRequiredArgumentsInSchemas() {
-    var definitions = BuiltinTools.registry().definitions().stream()
+    var definitions = registry().definitions().stream()
         .collect(Collectors.toMap(ToolDefinition::id, definition -> definition));
 
     assertTrue(required(definitions.get("shell_run")).contains("command"));
@@ -49,5 +53,11 @@ class BuiltinToolsTest {
   @SuppressWarnings("unchecked")
   private static List<String> required(ToolDefinition definition) {
     return (List<String>) definition.inputSchema().getOrDefault("required", List.of());
+  }
+
+  private static com.jvibe.tool.ToolRegistry registry() {
+    try (var scope = BeanScope.builder().build()) {
+      return scope.get(ToolRegistryFactory.class).create(new Workspace(Path.of(System.getProperty("user.dir"))));
+    }
   }
 }

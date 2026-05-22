@@ -1,10 +1,8 @@
 package com.jvibe.cli;
 
 import com.jvibe.agent.AgentRunner;
-import com.jvibe.provider.ProviderConfigService;
 import com.jvibe.session.AgentSession;
-import com.jvibe.tool.builtin.BuiltinTools;
-import com.jvibe.workspace.Workspace;
+import com.jvibe.session.SessionFactory;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -13,14 +11,14 @@ import java.nio.file.Path;
 
 final class GatewayServer {
   private final AgentRunner runner;
-  private final ProviderConfigService providerConfig;
+  private final SessionFactory sessionFactory;
   private final String host;
   private final int port;
   private final Path workspace;
 
-  GatewayServer(AgentRunner runner, ProviderConfigService providerConfig, String host, int port, Path workspace) {
+  GatewayServer(AgentRunner runner, SessionFactory sessionFactory, String host, int port, Path workspace) {
     this.runner = runner;
-    this.providerConfig = providerConfig;
+    this.sessionFactory = sessionFactory;
     this.host = host;
     this.port = port;
     this.workspace = workspace;
@@ -60,9 +58,6 @@ final class GatewayServer {
   }
 
   private AgentSession session() {
-    var session = new AgentSession(new Workspace(workspace), BuiltinTools.registry());
-    var settings = providerConfig.settings(providerConfig.defaultProvider());
-    session.selectModel(settings.provider(), settings.selectedModel());
-    return session;
+    return sessionFactory.create(workspace);
   }
 }

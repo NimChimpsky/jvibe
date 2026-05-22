@@ -16,7 +16,7 @@ import com.jvibe.provider.ProviderEvent;
 import com.jvibe.provider.ProviderRegistry;
 import com.jvibe.provider.ProviderRequest;
 import com.jvibe.provider.ProviderSettings;
-import com.jvibe.tool.builtin.BuiltinTools;
+import com.jvibe.tool.ToolRegistry;
 import com.jvibe.workspace.Workspace;
 import java.nio.file.Path;
 import java.util.List;
@@ -67,7 +67,7 @@ class GuiControllerTest {
     assertEquals(List.of("openai/gpt-saved", "openai/gpt-extra"),
         controller.choices().stream().map(ModelChoice::display).toList());
 
-    var session = new com.jvibe.session.AgentSession(new Workspace(home), BuiltinTools.registry());
+    var session = new com.jvibe.session.AgentSession(new Workspace(home), new ToolRegistry());
     controller.apply(session, "openai/gpt-extra");
 
     assertEquals("openai", session.provider());
@@ -86,7 +86,7 @@ class GuiControllerTest {
   @Test
   void promptControllerTrimsPromptAndStreamsRunnerEvents() throws Exception {
     var runner = mock(AgentRunner.class);
-    var session = new com.jvibe.session.AgentSession(new Workspace(home), BuiltinTools.registry());
+    var session = new com.jvibe.session.AgentSession(new Workspace(home), new ToolRegistry());
     var expected = new AgentEvent(AgentEvent.Type.ASSISTANT_DELTA, "hi");
     when(runner.run(session, "hello")).thenReturn(Stream.of(expected));
 
