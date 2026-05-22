@@ -1,4 +1,4 @@
-package com.jvibe.gui;
+package com.jvibe.gui.terminal;
 
 import java.nio.file.Files;
 import java.nio.file.Path;

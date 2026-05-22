@@ -1,4 +1,4 @@
-package com.jvibe.gui;
+package com.jvibe.gui.terminal;
 
 import com.jediterm.core.util.TermSize;
 import com.jediterm.terminal.TtyConnector;

@@ -1,4 +1,4 @@
-package com.jvibe.gui;
+package com.jvibe.gui.files;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;

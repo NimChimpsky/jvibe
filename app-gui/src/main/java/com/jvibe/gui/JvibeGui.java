@@ -18,13 +18,18 @@ import com.formdev.flatlaf.intellijthemes.materialthemeuilite.FlatMTGitHubDarkIJ
 import com.formdev.flatlaf.intellijthemes.materialthemeuilite.FlatMTGitHubIJTheme;
 import com.jvibe.config.ConfigService;
 import com.jvibe.config.JvibeConfig;
-import com.jvibe.deployment.DeploymentProfile;
 import com.jvibe.deployment.DeploymentService;
-import com.jvibe.deployment.DeploymentTarget;
 import com.jvibe.events.AgentEvent;
+import com.jvibe.gui.chat.ChatTranscript;
 import com.jvibe.gui.controller.ModelSelectionController;
 import com.jvibe.gui.controller.PromptController;
 import com.jvibe.gui.controller.ProviderSettingsController;
+import com.jvibe.gui.deploy.DeployAgentDialog;
+import com.jvibe.gui.files.FileSystemTree;
+import com.jvibe.gui.log.GuiLogPanel;
+import com.jvibe.gui.settings.GeneralSettingsDialog;
+import com.jvibe.gui.settings.ProviderSettingsDialog;
+import com.jvibe.gui.terminal.ShellPanel;
 import com.jvibe.logging.FileLogService;
 import com.jvibe.session.AgentSession;
 import com.jvibe.tool.ToolDefinition;
@@ -36,11 +41,9 @@ import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Insets;
-import java.awt.Color;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.event.KeyEvent;
-import java.awt.event.MouseEvent;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.LocalTime;
@@ -57,7 +60,6 @@ import javax.swing.Icon;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
-import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JList;
@@ -69,11 +71,9 @@ import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextArea;
 import javax.swing.KeyStroke;
-import javax.swing.ListCellRenderer;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
-import javax.swing.ToolTipManager;
 import javax.swing.UIManager;
 import javax.swing.border.EmptyBorder;
 
@@ -83,8 +83,6 @@ public final class JvibeGui {
   static final int PROMPT_INPUT_HEIGHT = 118;
   static final int FILE_REFERENCE_ROW_HEIGHT = 26;
   private static final int SHELL_HEIGHT = 220;
-  private static final int MESSAGE_MAX_WIDTH = 640;
-  private static final double MESSAGE_WIDTH_RATIO = 0.68;
 
   private BeanScope scope;
   private ConfigService configService;
@@ -96,18 +94,15 @@ public final class JvibeGui {
   private Workspace workspace;
   private AgentSession session;
   private JFrame frame;
-  private JPanel chatMessages;
+  private ChatTranscript transcript;
   private JSplitPane chatAndShell;
   private ShellPanel shellPanel;
-  private JTextArea activeAssistantMessage;
   private JPanel content;
   private JComboBox<String> modelSelector;
   private JTextArea prompt;
   private JPanel fileReferencePanel;
   private final List<Path> promptFileReferences = new ArrayList<>();
-  private DefaultListModel<LogEntry> logModel;
-  private JList<LogEntry> logList;
-  private JTextArea fullLogArea;
+  private GuiLogPanel logPanel;
   private DefaultListModel<String> approvalsModel;
   private DefaultListModel<String> toolsModel;
   private StringBuilder activeAssistantLog = new StringBuilder();
@@ -207,7 +202,7 @@ public final class JvibeGui {
     top.setPreferredSize(new Dimension(260, 66));
     top.add(button("Deploy Agent", event -> showDeployAgentDialog()), BorderLayout.WEST);
     top.add(button("New Chat", event -> {
-      chatMessages.removeAll();
+      transcript.clear();
       appendAssistant("New chat started.");
       log("INFO", "Started new chat");
     }), BorderLayout.EAST);
@@ -352,12 +347,7 @@ public final class JvibeGui {
     if (toolsModel == null) {
       toolsModel = new DefaultListModel<>();
     }
-    logModel = new DefaultListModel<>();
-    logList = logList(logModel);
-    fullLogArea = new JTextArea();
-    fullLogArea.setEditable(false);
-    fullLogArea.setLineWrap(false);
-    fullLogArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+    logPanel = new GuiLogPanel();
 
     var refresh = button("Refresh");
     refresh.addActionListener(event -> {
@@ -375,9 +365,9 @@ public final class JvibeGui {
     toolsPanel.add(scroll(list(toolsModel)), BorderLayout.CENTER);
 
     var topTabs = new JTabbedPane();
-    topTabs.addTab("Log", scroll(logList));
+    topTabs.addTab("Log", scroll(logPanel.logList()));
     topTabs.addTab("Tools", toolsPanel);
-    topTabs.addTab("Full Log", scroll(fullLogArea));
+    topTabs.addTab("Full Log", scroll(logPanel.fullLogArea()));
     refreshFullLog();
 
     var top = new JPanel(new BorderLayout(0, 10));
@@ -404,14 +394,12 @@ public final class JvibeGui {
   }
 
   private void showChatView() {
-    chatMessages = new JPanel();
-    chatMessages.setLayout(new BoxLayout(chatMessages, BoxLayout.Y_AXIS));
-    chatMessages.setBorder(new EmptyBorder(12, 12, 12, 12));
+    transcript = new ChatTranscript();
     shellPanel = new ShellPanel(workspace.root(), message -> log("INFO", message));
     shellPanel.setVisible(false);
 
     var chatAndComposer = new JPanel(new BorderLayout());
-    chatAndComposer.add(scroll(chatMessages), BorderLayout.CENTER);
+    chatAndComposer.add(scroll(transcript.component()), BorderLayout.CENTER);
     chatAndComposer.add(buildComposer(), BorderLayout.SOUTH);
 
     chatAndShell = new JSplitPane(JSplitPane.VERTICAL_SPLIT, chatAndComposer, shellPanel);
@@ -474,71 +462,13 @@ public final class JvibeGui {
   }
 
   private void showDeployAgentDialog() {
-    log("INFO", "Opened Deploy Agent");
-    var dialog = new JDialog(frame, "Deploy Agent", true);
-    dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
-    dialog.addWindowListener(new java.awt.event.WindowAdapter() {
-      @Override
-      public void windowClosed(java.awt.event.WindowEvent event) {
-        log("INFO", "Closed Deploy Agent");
-      }
-    });
-
-    var body = new JPanel(new BorderLayout(0, 16));
-    body.setBorder(new EmptyBorder(18, 18, 14, 18));
-
-    var fields = new JPanel(new java.awt.GridLayout(0, 2, 8, 8));
-    var type = new JComboBox<>(new String[] {"local", "ssh"});
-    var host = new javax.swing.JTextField();
-    var user = new javax.swing.JTextField(System.getProperty("user.name", ""));
-    var path = new javax.swing.JTextField("~/.jvibe/agent");
-    var workspaceField = new javax.swing.JTextField(workspace.root().toString());
-    fields.add(new JLabel("Target"));
-    fields.add(type);
-    fields.add(new JLabel("Host"));
-    fields.add(host);
-    fields.add(new JLabel("User"));
-    fields.add(user);
-    fields.add(new JLabel("Install path"));
-    fields.add(path);
-    fields.add(new JLabel("Workspace"));
-    fields.add(workspaceField);
-    body.add(fields, BorderLayout.CENTER);
-
-    var actions = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 8, 0));
-    var cancel = button("Cancel", event -> dialog.dispose());
-    var deploy = button("Deploy", event -> {
-      var target = new DeploymentTarget(
-          type.getSelectedItem().toString(),
-          host.getText(),
-          user.getText(),
-          path.getText(),
-          workspaceField.getText());
-      var profile = new DeploymentProfile(
-          "gui",
-          target,
-          session.provider(),
-          session.model(),
-          "autonomous",
-          true,
-          "127.0.0.1",
-          8737);
-      var cliJar = Path.of("app-cli/build/libs/jvibe-cli-0.1.0-SNAPSHOT.jar").toAbsolutePath().normalize();
-      var result = "local".equals(target.type())
-          ? deploymentService.deployLocal(profile, cliJar)
-          : deploymentService.plan(profile, cliJar);
-      log(result.success() ? "INFO" : "ERROR", result.summary());
-      JOptionPane.showMessageDialog(dialog, result.summary() + "\n\n" + String.join("\n", result.commands()), "Deploy Agent", result.success() ? JOptionPane.INFORMATION_MESSAGE : JOptionPane.ERROR_MESSAGE);
-    });
-    actions.add(cancel);
-    actions.add(deploy);
-    body.add(actions, BorderLayout.SOUTH);
-
-    dialog.setContentPane(body);
-    dialog.setSize(new Dimension(620, 320));
-    dialog.setMinimumSize(new Dimension(520, 280));
-    dialog.setLocationRelativeTo(frame);
-    dialog.setVisible(true);
+    new DeployAgentDialog(
+        frame,
+        deploymentService,
+        workspace.root(),
+        session.provider(),
+        session.model(),
+        message -> log("INFO", message)).show();
   }
 
   private JComponent themeSelector() {
@@ -598,7 +528,7 @@ public final class JvibeGui {
     prompt.setText("");
     clearFileReferences();
     appendUser(typedText, references);
-    activeAssistantMessage = null;
+    transcript.finishAssistant();
     activeAssistantLog = new StringBuilder();
     activeAssistantChars = 0;
     promptRunning = true;
@@ -655,7 +585,7 @@ public final class JvibeGui {
       }
       case DONE -> {
         flushAssistantLog();
-        activeAssistantMessage = null;
+        transcript.finishAssistant();
         if (activeAssistantChars == 0) {
           log("WARN", "Run completed without assistant text");
         } else {
@@ -685,29 +615,19 @@ public final class JvibeGui {
   }
 
   private void appendUser(String text, List<Path> references) {
-    chatMessages.add(messageBubble(text, true, references));
-    refresh(chatMessages);
+    transcript.appendUser(text, references);
   }
 
   private void appendAssistant(String text) {
-    chatMessages.add(messageBubble(text, false, List.of()));
-    refresh(chatMessages);
+    transcript.appendAssistant(text);
   }
 
   private void appendAssistantDelta(String text) {
-    if (text.isBlank()) {
+    if (!transcript.appendAssistantDelta(text)) {
       return;
     }
-    if (activeAssistantMessage == null) {
-      var bubble = messageBubble("", false, List.of());
-      activeAssistantMessage = (JTextArea) bubble.getClientProperty("body");
-      chatMessages.add(bubble);
-    }
-    activeAssistantMessage.append(text);
-    fitMessageBody(activeAssistantMessage);
     activeAssistantLog.append(text);
     activeAssistantChars += text.length();
-    refresh(chatMessages);
   }
 
   private void flushAssistantLog() {
@@ -716,123 +636,6 @@ public final class JvibeGui {
       activeAssistantLog.setLength(0);
       refreshFullLog();
     }
-  }
-
-  private JComponent messageBubble(String text, boolean user, List<Path> references) {
-    var row = new JPanel(new BorderLayout());
-    row.setOpaque(false);
-    row.setBorder(new EmptyBorder(3, 0, 3, 0));
-
-    var wrapper = new JPanel(new BorderLayout());
-    wrapper.setOpaque(true);
-    wrapper.setBackground(messageBackground(user));
-    wrapper.setBorder(new EmptyBorder(6, 8, 6, 8));
-
-    var body = new JTextArea(text);
-    body.setEditable(false);
-    body.setLineWrap(true);
-    body.setWrapStyleWord(true);
-    body.setOpaque(false);
-    body.setBorder(null);
-    body.putClientProperty("messageWrapper", wrapper);
-    if (!references.isEmpty()) {
-      wrapper.add(historyReferencePanel(references), BorderLayout.NORTH);
-    }
-    wrapper.add(body, BorderLayout.CENTER);
-    row.add(wrapper, user ? BorderLayout.EAST : BorderLayout.WEST);
-    row.putClientProperty("body", body);
-    row.setAlignmentX(Component.LEFT_ALIGNMENT);
-    fitMessageBody(body);
-    return row;
-  }
-
-  private void fitMessageBody(JTextArea body) {
-    var metrics = body.getFontMetrics(body.getFont());
-    var contentWidth = 32;
-    for (var line : body.getText().split("\\R", -1)) {
-      contentWidth = Math.max(contentWidth, metrics.stringWidth(line) + 2);
-    }
-    var transcriptWidth = chatMessages == null ? 0 : chatMessages.getWidth();
-    var maxWidth = transcriptWidth > 0
-        ? Math.min(MESSAGE_MAX_WIDTH, Math.max(280, (int) (transcriptWidth * MESSAGE_WIDTH_RATIO)))
-        : MESSAGE_MAX_WIDTH;
-    var width = Math.min(maxWidth, contentWidth);
-    body.setSize(new Dimension(width, Short.MAX_VALUE));
-    var preferred = body.getPreferredSize();
-    var textHeight = Math.max(preferred.height, estimatedTextHeight(body, width));
-    body.setPreferredSize(new Dimension(width, textHeight));
-    if (body.getClientProperty("messageWrapper") instanceof JComponent wrapper) {
-      var wrapperHeight = textHeight + 12 + wrapperExtraHeight(wrapper);
-      wrapper.setPreferredSize(new Dimension(width + 16, wrapperHeight));
-      wrapper.setMaximumSize(new Dimension(width + 16, wrapperHeight));
-      if (wrapper.getParent() instanceof JComponent row) {
-        var insets = row.getInsets();
-        var rowHeight = wrapperHeight + insets.top + insets.bottom;
-        row.setPreferredSize(new Dimension(0, rowHeight));
-        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, rowHeight));
-        row.revalidate();
-      }
-    }
-  }
-
-  private int wrapperExtraHeight(JComponent wrapper) {
-    var extra = 0;
-    for (var component : wrapper.getComponents()) {
-      if (!(component instanceof JTextArea)) {
-        extra += component.getPreferredSize().height + 4;
-      }
-    }
-    return extra;
-  }
-
-  private int estimatedTextHeight(JTextArea body, int width) {
-    var metrics = body.getFontMetrics(body.getFont());
-    var usableWidth = Math.max(1, width - 4);
-    var lines = 0;
-    for (var line : body.getText().split("\\R", -1)) {
-      var lineWidth = Math.max(1, metrics.stringWidth(line));
-      lines += Math.max(1, (int) Math.ceil(lineWidth / (double) usableWidth));
-    }
-    return metrics.getHeight() * lines + 6;
-  }
-
-  private Color messageBackground(boolean user) {
-    var base = UIManager.getColor("Panel.background");
-    var tint = UIManager.getColor(user ? "TextArea.selectionBackground" : "TextArea.background");
-    if (base == null) {
-      base = Color.GRAY;
-    }
-    if (tint == null) {
-      tint = base;
-    }
-    return blend(base, tint, user ? 0.18 : 0.08);
-  }
-
-  private static Color blend(Color base, Color tint, double amount) {
-    var inverse = 1.0 - amount;
-    return new Color(
-        (int) Math.round(base.getRed() * inverse + tint.getRed() * amount),
-        (int) Math.round(base.getGreen() * inverse + tint.getGreen() * amount),
-        (int) Math.round(base.getBlue() * inverse + tint.getBlue() * amount));
-  }
-
-  private JComponent panel(String title, String subtitle, JComponent body) {
-    var panel = new JPanel(new BorderLayout(0, 12));
-    panel.setBorder(new EmptyBorder(18, 18, 18, 18));
-    var header = new JPanel();
-    header.setLayout(new BoxLayout(header, BoxLayout.Y_AXIS));
-    header.add(label(title, 22, Font.BOLD));
-    header.add(label(subtitle, 12, Font.PLAIN));
-    panel.add(header, BorderLayout.NORTH);
-    panel.add(body, BorderLayout.CENTER);
-    return panel;
-  }
-
-  private JButton nav(String label, Runnable action) {
-    var button = button(label);
-    button.setHorizontalAlignment(JButton.LEFT);
-    button.addActionListener(event -> action.run());
-    return button;
   }
 
   private JButton button(String text) {
@@ -889,28 +692,6 @@ public final class JvibeGui {
   private JList<String> list(DefaultListModel<String> model) {
     var list = new JList<>(model);
     list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-    return list;
-  }
-
-  private JList<LogEntry> logList(DefaultListModel<LogEntry> model) {
-    var list = new JList<LogEntry>(model) {
-      @Override
-      public String getToolTipText(MouseEvent event) {
-        var index = locationToIndex(event.getPoint());
-        if (index < 0) {
-          return null;
-        }
-        var bounds = getCellBounds(index, index);
-        if (bounds == null || !bounds.contains(event.getPoint())) {
-          return null;
-        }
-        var entry = getModel().getElementAt(index);
-        return entry.time() + "  " + entry.level();
-      }
-    };
-    list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-    list.setCellRenderer(new LogEntryRenderer());
-    ToolTipManager.sharedInstance().registerComponent(list);
     return list;
   }
 
@@ -972,22 +753,6 @@ public final class JvibeGui {
     return button;
   }
 
-  private JPanel historyReferencePanel(List<Path> references) {
-    var panel = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 4, 0));
-    panel.setOpaque(false);
-    for (var path : references) {
-      var label = new JLabel(filename(path));
-      label.setToolTipText(path.toString());
-      label.setOpaque(true);
-      label.setBackground(messageBackground(true));
-      label.setBorder(BorderFactory.createCompoundBorder(
-          BorderFactory.createLineBorder(blend(messageBackground(true), UIManager.getColor("Label.foreground"), 0.18)),
-          new EmptyBorder(2, 8, 2, 8)));
-      panel.add(label);
-    }
-    return panel;
-  }
-
   private String promptTextWithReferences(String text, List<Path> references) {
     if (references.isEmpty()) {
       return text;
@@ -1002,19 +767,9 @@ public final class JvibeGui {
     return builder.toString();
   }
 
-  private String fileReferenceSummary(List<Path> references) {
-    return references.stream()
-        .map(this::filename)
-        .collect(java.util.stream.Collectors.joining(", ", "File references: ", ""));
-  }
-
   private String filename(Path path) {
     var name = path.getFileName();
     return name == null ? path.toString() : name.toString();
-  }
-
-  private Component separator() {
-    return Box.createVerticalStrut(14);
   }
 
   private void setContent(JComponent component) {
@@ -1028,18 +783,16 @@ public final class JvibeGui {
       fileLogService.event(level, message);
       refreshFullLog();
     }
-    if (logModel != null) {
-      logModel.addElement(new LogEntry(timestamp(), level, message));
-      logList.ensureIndexIsVisible(logModel.size() - 1);
+    if (logPanel != null) {
+      logPanel.append(timestamp(), level, message);
     }
   }
 
   private void refreshFullLog() {
-    if (fullLogArea == null || fileLogService == null) {
+    if (logPanel == null || fileLogService == null) {
       return;
     }
-    fullLogArea.setText(fileLogService.readAll());
-    fullLogArea.setCaretPosition(fullLogArea.getDocument().getLength());
+    logPanel.setFullLog(fileLogService.readAll());
   }
 
   private void status(String message) {
@@ -1050,10 +803,6 @@ public final class JvibeGui {
 
   private String timestamp() {
     return LocalTime.now().format(TIME);
-  }
-
-  private int shortcutMask() {
-    return java.awt.Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx();
   }
 
   private void refresh(JComponent component) {
@@ -1073,8 +822,6 @@ public final class JvibeGui {
     var cause = e.getCause() == null ? e : e.getCause();
     return cause.getMessage() == null ? cause.getClass().getSimpleName() : cause.getMessage();
   }
-
-  private record LogEntry(String time, String level, String message) {}
 
   private static final class TerminalIcon implements Icon {
     private static final int WIDTH = 16;
@@ -1102,38 +849,6 @@ public final class JvibeGui {
     @Override
     public int getIconHeight() {
       return HEIGHT;
-    }
-  }
-
-  private static final class LogEntryRenderer extends JLabel implements ListCellRenderer<LogEntry> {
-    LogEntryRenderer() {
-      setOpaque(true);
-      setBorder(new EmptyBorder(5, 8, 5, 8));
-    }
-
-    @Override
-    public Component getListCellRendererComponent(
-        JList<? extends LogEntry> list,
-        LogEntry value,
-        int index,
-        boolean selected,
-        boolean cellHasFocus) {
-      setText(value.message());
-      setFont(list.getFont());
-      setBackground(selected ? list.getSelectionBackground() : list.getBackground());
-      if (selected) {
-        setForeground(list.getSelectionForeground());
-      } else {
-        setForeground(switch (value.level()) {
-          case "WARN" -> UIManager.getColor("Actions.Yellow");
-          case "ERROR" -> UIManager.getColor("Actions.Red");
-          default -> list.getForeground();
-        });
-        if (getForeground() == null) {
-          setForeground(list.getForeground());
-        }
-      }
-      return this;
     }
   }
 

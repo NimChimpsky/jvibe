@@ -1,4 +1,4 @@
-package com.jvibe.gui;
+package com.jvibe.gui.settings;
 
 import com.jvibe.gui.controller.ProviderSettingsController;
 import com.jvibe.provider.ProviderDefinition;
@@ -32,7 +32,7 @@ import javax.swing.SwingWorker;
 import javax.swing.UIManager;
 import javax.swing.border.EmptyBorder;
 
-final class ProviderSettingsDialog {
+public final class ProviderSettingsDialog {
   private final JFrame owner;
   private final ProviderSettingsController controller;
   private final Runnable onSaved;
@@ -40,7 +40,7 @@ final class ProviderSettingsDialog {
   private final List<ProviderTab> providerTabs = new ArrayList<>();
   private JDialog activeDialog;
 
-  ProviderSettingsDialog(
+  public ProviderSettingsDialog(
       JFrame owner,
       ProviderSettingsController controller,
       Runnable onSaved,
@@ -51,7 +51,7 @@ final class ProviderSettingsDialog {
     this.activity = activity;
   }
 
-  void show() {
+  public void show() {
     var dialog = new JDialog(owner, "Providers", true);
     activeDialog = dialog;
     dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);

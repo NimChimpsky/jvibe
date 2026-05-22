@@ -1,4 +1,4 @@
-package com.jvibe.gui;
+package com.jvibe.gui.settings;
 
 import com.jvibe.config.ConfigService;
 import com.jvibe.config.JvibeConfig;
@@ -26,18 +26,18 @@ import javax.swing.KeyStroke;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.border.EmptyBorder;
 
-final class GeneralSettingsDialog {
+public final class GeneralSettingsDialog {
   private final JFrame owner;
   private final ConfigService configService;
   private final Consumer<String> log;
 
-  GeneralSettingsDialog(JFrame owner, ConfigService configService, Consumer<String> log) {
+  public GeneralSettingsDialog(JFrame owner, ConfigService configService, Consumer<String> log) {
     this.owner = owner;
     this.configService = configService;
     this.log = log;
   }
 
-  void show() {
+  public void show() {
     try {
       var dialog = new JDialog(owner, "General", true);
       dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);

@@ -1,4 +1,4 @@
-package com.jvibe.gui;
+package com.jvibe.gui.terminal;
 
 import com.jediterm.terminal.TerminalColor;
 import com.jediterm.terminal.TextStyle;
@@ -16,13 +16,13 @@ import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import javax.swing.border.EmptyBorder;
 
-final class ShellPanel extends JPanel {
+public final class ShellPanel extends JPanel {
   private final Path workingDirectory;
   private final Consumer<String> log;
   private ShellSession session;
   private JediTermWidget terminal;
 
-  ShellPanel(Path workingDirectory, Consumer<String> log) {
+  public ShellPanel(Path workingDirectory, Consumer<String> log) {
     super(new BorderLayout());
     this.workingDirectory = workingDirectory;
     this.log = log;
@@ -31,7 +31,7 @@ final class ShellPanel extends JPanel {
     setPreferredSize(new Dimension(0, 220));
   }
 
-  void startOrRestore() {
+  public void startOrRestore() {
     if (session == null || !session.isConnected()) {
       start();
       return;
@@ -39,11 +39,11 @@ final class ShellPanel extends JPanel {
     terminal.requestFocusInWindow();
   }
 
-  void stopSession() {
+  public void stopSession() {
     closeSession();
   }
 
-  void restart() {
+  public void restart() {
     closeSession();
     start();
   }

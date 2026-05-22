@@ -1,4 +1,4 @@
-package com.jvibe.gui;
+package com.jvibe.gui.files;
 
 import java.awt.Component;
 import java.awt.event.MouseAdapter;
@@ -24,7 +24,7 @@ import javax.swing.tree.ExpandVetoException;
 import javax.swing.tree.TreePath;
 import java.util.function.Consumer;
 
-final class FileSystemTree {
+public final class FileSystemTree {
   private static final Loading LOADING = new Loading();
   private static final Comparator<Entry> ENTRY_ORDER = Comparator
       .comparing((Entry entry) -> !entry.directory())
@@ -33,11 +33,11 @@ final class FileSystemTree {
 
   private FileSystemTree() {}
 
-  static JTree create(Path initialPath) {
+  public static JTree create(Path initialPath) {
     return create(initialPath, path -> {});
   }
 
-  static JTree create(Path initialPath, Consumer<Path> addToChat) {
+  public static JTree create(Path initialPath, Consumer<Path> addToChat) {
     var focusedPath = initialPath.toAbsolutePath().normalize();
     var rootPath = filesystemRoot(focusedPath);
     var root = node(new Entry(rootPath, label(rootPath), true, false));
@@ -75,11 +75,11 @@ final class FileSystemTree {
     return tree;
   }
 
-  static List<Entry> children(Path directory) {
+  public static List<Entry> children(Path directory) {
     return children(directory, false);
   }
 
-  static List<Entry> children(Path directory, boolean showHidden) {
+  public static List<Entry> children(Path directory, boolean showHidden) {
     try (var stream = Files.list(directory)) {
       return stream
           .filter(path -> showHidden || !hidden(path))
@@ -278,7 +278,7 @@ final class FileSystemTree {
     return name == null ? path.toString() : name.toString();
   }
 
-  record Entry(Path path, String label, boolean directory, boolean error) {
+  public record Entry(Path path, String label, boolean directory, boolean error) {
     static Entry error(String label) {
       return new Entry(null, label, false, true);
     }
