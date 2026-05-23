@@ -18,13 +18,13 @@ import com.formdev.flatlaf.intellijthemes.materialthemeuilite.FlatMTGitHubDarkIJ
 import com.formdev.flatlaf.intellijthemes.materialthemeuilite.FlatMTGitHubIJTheme;
 import com.jvibe.config.ConfigService;
 import com.jvibe.config.JvibeConfig;
-import com.jvibe.deployment.DeploymentService;
 import com.jvibe.events.AgentEvent;
 import com.jvibe.gui.chat.ChatTranscript;
 import com.jvibe.gui.controller.ModelSelectionController;
 import com.jvibe.gui.controller.PromptController;
 import com.jvibe.gui.controller.ProviderSettingsController;
-import com.jvibe.gui.deploy.DeployAgentDialog;
+import com.jvibe.gui.swarm.AgentSwarmContext;
+import com.jvibe.gui.swarm.AgentSwarmPanelFactory;
 import com.jvibe.gui.files.FileSystemTree;
 import com.jvibe.gui.log.GuiLogPanel;
 import com.jvibe.gui.output.OutputPanel;
@@ -94,7 +94,7 @@ public final class JvibeGui {
   private ProviderSettingsController providerSettingsController;
   private ModelSelectionController modelSelectionController;
   private PromptController promptController;
-  private DeploymentService deploymentService;
+  private AgentSwarmPanelFactory agentSwarmPanelFactory;
   private FileLogService fileLogService;
   private SessionFactory sessionFactory;
   private Workspace workspace;
@@ -141,7 +141,7 @@ public final class JvibeGui {
     providerSettingsController = scope.get(ProviderSettingsController.class);
     modelSelectionController = scope.get(ModelSelectionController.class);
     promptController = scope.get(PromptController.class);
-    deploymentService = scope.get(DeploymentService.class);
+    agentSwarmPanelFactory = scope.get(AgentSwarmPanelFactory.class);
     fileLogService = scope.get(FileLogService.class);
     sessionFactory = scope.get(SessionFactory.class);
     configService.bootstrap();
@@ -186,6 +186,13 @@ public final class JvibeGui {
   }
 
   private JComponent buildRoot() {
+    var rootTabs = new JTabbedPane();
+    rootTabs.addTab("Dashboard", buildDashboard());
+    rootTabs.addTab("Agent Swarm", agentSwarmPanelFactory.create(frame, this::agentSwarmContext, message -> log("INFO", message)));
+    return rootTabs;
+  }
+
+  private JComponent buildDashboard() {
     var mainAndRight = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, buildMain(), buildInspector());
     mainAndRight.setResizeWeight(1.0);
     mainAndRight.setDividerSize(6);
@@ -198,14 +205,17 @@ public final class JvibeGui {
     return root;
   }
 
-  private JComponent buildSidebar() {
-    var top = new JPanel();
-    top.setLayout(new BorderLayout(8, 0));
-    top.setBorder(new EmptyBorder(16, 16, 12, 16));
-    top.setMinimumSize(new Dimension(260, 0));
-    top.setPreferredSize(new Dimension(260, 66));
-    top.add(button("Deploy Agent", event -> showDeployAgentDialog()), BorderLayout.CENTER);
+  private AgentSwarmContext agentSwarmContext() {
+    var provider = activeTab == null || activeTab.session == null ? "local" : activeTab.session.provider();
+    var model = activeTab == null || activeTab.session == null ? "echo" : activeTab.session.model();
+    var deploymentWorkspace = workspace.root();
+    if (activeTab != null && activeTab.session != null && activeTab.session.mode() == AgentSession.Mode.WORKSPACE) {
+      deploymentWorkspace = activeTab.shellWorkingDirectory;
+    }
+    return new AgentSwarmContext(deploymentWorkspace, provider, model);
+  }
 
+  private JComponent buildSidebar() {
     var files = new JPanel(new BorderLayout(0, 8));
     files.setBorder(new EmptyBorder(8, 16, 8, 16));
     files.add(section("Files"), BorderLayout.NORTH);
@@ -231,12 +241,7 @@ public final class JvibeGui {
 
     files.setMinimumSize(new Dimension(260, 140));
 
-    var topAndFiles = new JSplitPane(JSplitPane.VERTICAL_SPLIT, top, files);
-    topAndFiles.setResizeWeight(0.0);
-    topAndFiles.setDividerSize(6);
-    topAndFiles.setBorder(null);
-
-    var sections = new JSplitPane(JSplitPane.VERTICAL_SPLIT, topAndFiles, bottom);
+    var sections = new JSplitPane(JSplitPane.VERTICAL_SPLIT, files, bottom);
     sections.setResizeWeight(1.0);
     sections.setDividerSize(6);
     sections.setBorder(null);
@@ -424,7 +429,7 @@ public final class JvibeGui {
     outputWrapper.add(outputPanel, BorderLayout.CENTER);
 
     var topTabs = new JTabbedPane();
-    topTabs.addTab("Output", outputWrapper);
+    topTabs.addTab("File Output", outputWrapper);
 
     var top = new JPanel(new BorderLayout());
     top.setMinimumSize(new Dimension(360, 0));
@@ -497,13 +502,7 @@ public final class JvibeGui {
     panel.add(label);
 
     if (state.session.mode() == AgentSession.Mode.CHAT) {
-      var add = new JButton("+");
-      add.setToolTipText("New chat");
-      add.setFocusable(false);
-      add.setMargin(new Insets(0, 4, 0, 4));
-      add.setPreferredSize(new Dimension(20, 20));
-      add.addActionListener(event -> createDefaultChatTab(true));
-      panel.add(add);
+      panel.add(tabAction("+", "New chat", () -> createDefaultChatTab(true)));
     }
 
     var menu = new JPopupMenu();
@@ -517,6 +516,21 @@ public final class JvibeGui {
       }
     });
     return panel;
+  }
+
+  private JLabel tabAction(String text, String tooltip, Runnable action) {
+    var label = new JLabel(text);
+    label.setToolTipText(tooltip);
+    label.setBorder(new EmptyBorder(0, 4, 0, 4));
+    label.setFocusable(false);
+    label.addMouseListener(new MouseAdapter() {
+      @Override
+      public void mouseClicked(MouseEvent event) {
+        action.run();
+        event.consume();
+      }
+    });
+    return label;
   }
 
   private void deleteTab(ChatTabState state) {
@@ -652,16 +666,6 @@ public final class JvibeGui {
 
   private void showGeneralSettingsDialog() {
     new GeneralSettingsDialog(frame, configService, message -> log("INFO", message)).show();
-  }
-
-  private void showDeployAgentDialog() {
-    new DeployAgentDialog(
-        frame,
-        deploymentService,
-        workspace.root(),
-        activeTab.session.provider(),
-        activeTab.session.model(),
-        message -> log("INFO", message)).show();
   }
 
   private JComponent themeSelector() {
