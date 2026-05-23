@@ -40,7 +40,7 @@ public final class FileLogService {
       var file = logFile();
       return Files.exists(file) ? Files.readString(file) : "";
     } catch (IOException e) {
-      return "Unable to read jvibe.log: " + e.getMessage();
+      return "Unable to read JVibe log: " + e.getMessage();
     }
   }
 

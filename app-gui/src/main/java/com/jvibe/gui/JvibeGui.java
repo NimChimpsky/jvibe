@@ -115,13 +115,13 @@ public final class JvibeGui {
       try {
         new JvibeGui().start();
       } catch (Exception e) {
-        JOptionPane.showMessageDialog(null, e.getMessage(), "jvibe startup failed", JOptionPane.ERROR_MESSAGE);
+        JOptionPane.showMessageDialog(null, e.getMessage(), "JVibe startup failed", JOptionPane.ERROR_MESSAGE);
       }
     });
   }
 
   private static void configureApplication() {
-    System.setProperty("apple.awt.application.name", "jvibe");
+    System.setProperty("apple.awt.application.name", "JVibe");
     System.setProperty("apple.laf.useScreenMenuBar", "true");
     System.setProperty("flatlaf.useNativeLibrary", "false");
     applyTheme(AppTheme.FLATLAF_DARK);
@@ -149,7 +149,7 @@ public final class JvibeGui {
     applyRunningTheme(currentTheme);
     initialiseCore(Path.of(System.getProperty("user.dir")));
 
-    frame = new JFrame("jvibe");
+    frame = new JFrame("JVibe");
     frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
     frame.addWindowListener(new java.awt.event.WindowAdapter() {
       @Override
@@ -475,7 +475,7 @@ public final class JvibeGui {
         number == 1 ? "Chat" : "Chat " + number,
         "No workspace write access",
         state,
-        "<html>Right click to add files to context, write access only in jvibe/tmp and accessible via \"Output\".<br>Create a workspace for full in place file editing.</html>");
+        "<html>Right click to add files to context, write access only in JVibe tmp and accessible via \"File Output\".<br>Create a workspace for full in place file editing.</html>");
     if (select) {
       selectTab(state);
       log("INFO", "Started new chat");

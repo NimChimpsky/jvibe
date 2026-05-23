@@ -1,10 +1,10 @@
-# jvibe
+# JVibe
 
 Java-based LLM coding agent with CLI and Swing GUI runtimes.
 
 ## Build All
 
-Requires a full JDK 21+ on `PATH`. A JRE is not enough because jvibe builds dynamic Java tools with `javac` and Gradle.
+Requires a full JDK 21+ on `PATH`. A JRE is not enough because JVibe builds dynamic Java tools with `javac` and Gradle.
 
 ```bash
 ./gradlew clean build

@@ -53,6 +53,9 @@ public final class GeneralSettingsDialog {
 
   private JComponent content(JDialog dialog, JvibeConfig config, String chatPrompt, String workspacePrompt) {
     var maxToolIterations = new JSpinner(new SpinnerNumberModel(config.maxToolIterations(), 1, 100, 1));
+    maxToolIterations.setPreferredSize(new Dimension(76, 28));
+    maxToolIterations.setMinimumSize(new Dimension(76, 28));
+    maxToolIterations.setMaximumSize(new Dimension(76, 28));
     var chatPromptArea = promptArea(chatPrompt);
     var workspacePromptArea = promptArea(workspacePrompt);
 
@@ -115,7 +118,7 @@ public final class GeneralSettingsDialog {
     name.setFont(name.getFont().deriveFont(Font.BOLD, 12));
     name.setPreferredSize(new Dimension(150, 26));
     row.add(name, BorderLayout.WEST);
-    row.add(value, BorderLayout.CENTER);
+    row.add(value, BorderLayout.WEST);
     return row;
   }
 

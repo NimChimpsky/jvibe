@@ -7,6 +7,7 @@ import java.util.Map;
 @Singleton
 public final class JvibeProviderClient extends AbstractChatCompletionsProviderClient {
   public static final String BASE_URL = "https://jvibe.net/api/v1";
+  public static final String ACCOUNT_URL = "https://vibe.net/account";
 
   public JvibeProviderClient(ProviderHttpClient http, ProviderConfigService configService) {
     super(http, configService);
@@ -20,8 +21,8 @@ public final class JvibeProviderClient extends AbstractChatCompletionsProviderCl
   @Override
   public List<ModelDescriptor> models() {
     return List.of(
-        model("jvibe-coder", "Jvibe Coder"),
-        model("jvibe-agent", "Jvibe Agent"));
+        model("jvibe-coder", "JVibe Coder"),
+        model("jvibe-agent", "JVibe Agent"));
   }
 
   @Override

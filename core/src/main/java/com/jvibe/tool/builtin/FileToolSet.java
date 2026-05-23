@@ -21,6 +21,6 @@ public final class FileToolSet {
     return List.of(
         FileListTool.registered(access),
         FileReadTool.registered(access),
-        FileWriteTool.registered(access, "Write output file", "Write a UTF-8 output file under ~/.jvibe/tmp."));
+        FileWriteTool.registered(access, "Write output file", "Write a UTF-8 output file under JVibe tmp (~/.jvibe/tmp)."));
   }
 }

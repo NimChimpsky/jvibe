@@ -172,7 +172,7 @@ public final class ProviderConfigService {
 
     var definitions = new LinkedHashMap<String, ProviderDefinition>();
     definitions.put("local", new ProviderDefinition("local", "Local Echo", "", "", "echo", basic));
-    definitions.put("jvibe", new ProviderDefinition("jvibe", "Jvibe", JvibeProviderClient.BASE_URL, "JVIBE_API_KEY", "jvibe-coder", jvibeThinking));
+    definitions.put("jvibe", new ProviderDefinition("jvibe", "JVibe", JvibeProviderClient.BASE_URL, "JVIBE_API_KEY", "jvibe-coder", jvibeThinking));
     definitions.put("openai", new ProviderDefinition("openai", "OpenAI", "https://api.openai.com/v1", "OPENAI_API_KEY", "gpt-5.4", openAiThinking));
     definitions.put("anthropic", new ProviderDefinition("anthropic", "Anthropic", "https://api.anthropic.com/v1", "ANTHROPIC_API_KEY", "claude-sonnet-4-20250514", List.of(
         ThinkingOption.of("off", "Off"),

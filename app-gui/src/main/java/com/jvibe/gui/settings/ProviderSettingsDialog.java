@@ -1,14 +1,16 @@
 package com.jvibe.gui.settings;
 
 import com.jvibe.gui.controller.ProviderSettingsController;
+import com.jvibe.provider.JvibeProviderClient;
 import com.jvibe.provider.ProviderDefinition;
 import com.jvibe.provider.ProviderSettings;
 import com.jvibe.provider.QwenProviderClient;
 import java.awt.BorderLayout;
+import java.awt.Desktop;
 import java.awt.Dimension;
 import java.awt.Font;
-import java.awt.Insets;
 import java.awt.event.KeyEvent;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
@@ -176,6 +178,7 @@ public final class ProviderSettingsDialog {
       if (isJvibe()) {
         credits.setForeground(UIManager.getColor("Label.disabledForeground"));
         credits.setText(controller.credits(settings()));
+        form.add(row("Account", accountButton()));
         var creditsPanel = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 0, 0));
         creditsPanel.add(credits);
         creditsPanel.add(javax.swing.Box.createHorizontalStrut(8));
@@ -291,6 +294,29 @@ public final class ProviderSettingsDialog {
       test.setEnabled(!busy);
       refreshCredits.setEnabled(!busy);
       status.setText(message);
+    }
+
+    private JButton accountButton() {
+      var button = new JButton("Buy credits / register account");
+      button.setToolTipText(JvibeProviderClient.ACCOUNT_URL);
+      button.addActionListener(event -> openAccountPage());
+      return button;
+    }
+
+    private void openAccountPage() {
+      try {
+        if (!Desktop.isDesktopSupported()) {
+          throw new IllegalStateException("Desktop browser is unavailable");
+        }
+        Desktop.getDesktop().browse(URI.create(JvibeProviderClient.ACCOUNT_URL));
+        activity.accept("Opened JVibe account page");
+      } catch (Exception e) {
+        JOptionPane.showMessageDialog(
+            activeDialog,
+            JvibeProviderClient.ACCOUNT_URL,
+            "JVibe account",
+            JOptionPane.INFORMATION_MESSAGE);
+      }
     }
   }
 
