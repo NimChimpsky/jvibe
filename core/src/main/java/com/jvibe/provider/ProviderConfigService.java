@@ -164,9 +164,15 @@ public final class ProviderConfigService {
     var qwenThinking = List.of(
         ThinkingOption.of("off", "Off"),
         ThinkingOption.of("on", "On"));
+    var jvibeThinking = List.of(
+        ThinkingOption.of("none", "None"),
+        ThinkingOption.of("low", "Low"),
+        ThinkingOption.of("medium", "Medium"),
+        ThinkingOption.of("high", "High"));
 
     var definitions = new LinkedHashMap<String, ProviderDefinition>();
     definitions.put("local", new ProviderDefinition("local", "Local Echo", "", "", "echo", basic));
+    definitions.put("jvibe", new ProviderDefinition("jvibe", "Jvibe", JvibeProviderClient.BASE_URL, "JVIBE_API_KEY", "jvibe-coder", jvibeThinking));
     definitions.put("openai", new ProviderDefinition("openai", "OpenAI", "https://api.openai.com/v1", "OPENAI_API_KEY", "gpt-5.4", openAiThinking));
     definitions.put("anthropic", new ProviderDefinition("anthropic", "Anthropic", "https://api.anthropic.com/v1", "ANTHROPIC_API_KEY", "claude-sonnet-4-20250514", List.of(
         ThinkingOption.of("off", "Off"),
@@ -176,7 +182,6 @@ public final class ProviderConfigService {
     definitions.put("mistral", new ProviderDefinition("mistral", "Mistral", "https://api.mistral.ai/v1", "MISTRAL_API_KEY", "mistral-large-latest", highOnly));
     definitions.put("deepseek", new ProviderDefinition("deepseek", "DeepSeek", "https://api.deepseek.com", "DEEPSEEK_API_KEY", "deepseek-v4-flash", deepSeek));
     definitions.put("qwen", new ProviderDefinition("qwen", "Qwen", QwenProviderClient.INTERNATIONAL_BASE_URL, "DASHSCOPE_API_KEY", "qwen3-coder-plus", qwenThinking));
-    definitions.put("openrouter", new ProviderDefinition("openrouter", "OpenRouter", "https://openrouter.ai/api/v1", "OPENROUTER_API_KEY", "openrouter/pareto-code", basic));
     return java.util.Collections.unmodifiableMap(definitions);
   }
 }

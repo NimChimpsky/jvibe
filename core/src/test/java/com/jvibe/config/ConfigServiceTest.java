@@ -21,6 +21,7 @@ class ConfigServiceTest {
     assertTrue(Files.isDirectory(paths.sessions()));
     assertTrue(Files.isDirectory(paths.tools()));
     assertTrue(Files.isDirectory(paths.logs()));
+    assertTrue(Files.isDirectory(paths.tmp()));
   }
 
   @Test

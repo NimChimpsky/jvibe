@@ -13,6 +13,10 @@ public final class FileReadTool {
   private FileReadTool() {}
 
   public static RegisteredTool registered() {
+    return registered(FileToolAccess.workspace());
+  }
+
+  public static RegisteredTool registered(FileToolAccess access) {
     return new RegisteredTool(
         new ToolDefinition(
             "file_read",
@@ -20,11 +24,14 @@ public final class FileReadTool {
             "Read a UTF-8 file inside the workspace.",
             ToolSchemas.object(Map.of("path", ToolSchemas.string("Relative file path under the workspace.")), "path"),
             ApprovalRequest.Risk.LOW),
-        FileReadTool::execute);
+        (call, context) -> execute(call, context, access));
   }
 
-  static ToolResult execute(ToolCall call, ToolExecutionContext context) throws Exception {
-    var path = context.workspace().resolveInside(ToolArguments.string(call.arguments(), "path"));
+  static ToolResult execute(ToolCall call, ToolExecutionContext context, FileToolAccess access) throws Exception {
+    var path = access.resolveReadable(context.workspace(), ToolArguments.string(call.arguments(), "path"));
+    if (!Files.isRegularFile(path)) {
+      return ToolResult.failure(call.id(), "Not a file: " + path);
+    }
     var content = Files.readString(path);
     return ToolResult.success(call.id(), Map.of("path", path.toString(), "content", content), "Read " + path.getFileName());
   }

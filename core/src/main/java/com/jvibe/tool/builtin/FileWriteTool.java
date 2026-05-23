@@ -13,20 +13,24 @@ public final class FileWriteTool {
   private FileWriteTool() {}
 
   public static RegisteredTool registered() {
+    return registered(FileToolAccess.workspace(), ApprovalRequest.Risk.HIGH, "Write file", "Write a UTF-8 file inside the workspace.");
+  }
+
+  public static RegisteredTool registered(FileToolAccess access, ApprovalRequest.Risk risk, String name, String description) {
     return new RegisteredTool(
         new ToolDefinition(
             "file_write",
-            "Write file",
-            "Write a UTF-8 file inside the workspace.",
+            name,
+            description,
             ToolSchemas.object(Map.of(
                 "path", ToolSchemas.string("Relative file path under the workspace."),
                 "content", ToolSchemas.string("Full file content to write.")), "path", "content"),
-            ApprovalRequest.Risk.HIGH),
-        FileWriteTool::execute);
+            risk),
+        (call, context) -> execute(call, context, access));
   }
 
-  static ToolResult execute(ToolCall call, ToolExecutionContext context) throws Exception {
-    var path = context.workspace().resolveInside(ToolArguments.string(call.arguments(), "path"));
+  static ToolResult execute(ToolCall call, ToolExecutionContext context, FileToolAccess access) throws Exception {
+    var path = access.resolveWritable(context.workspace(), ToolArguments.string(call.arguments(), "path"));
     var content = ToolArguments.string(call.arguments(), "content", "");
     Files.createDirectories(path.getParent());
     Files.writeString(path, content);

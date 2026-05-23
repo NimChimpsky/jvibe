@@ -38,6 +38,10 @@ public final class FileSystemTree {
   }
 
   public static JTree create(Path initialPath, Consumer<Path> addToChat) {
+    return create(initialPath, new Actions(addToChat, path -> {}));
+  }
+
+  public static JTree create(Path initialPath, Actions actions) {
     var focusedPath = initialPath.toAbsolutePath().normalize();
     var rootPath = filesystemRoot(focusedPath);
     var root = node(new Entry(rootPath, label(rootPath), true, false));
@@ -47,7 +51,7 @@ public final class FileSystemTree {
     tree.setRootVisible(true);
     tree.setShowsRootHandles(true);
     tree.setCellRenderer(new Renderer());
-    tree.setComponentPopupMenu(contextMenu(tree, model, root, focusedPath, addToChat));
+    tree.setComponentPopupMenu(contextMenu(tree, model, root, focusedPath, actions));
     tree.addMouseListener(new MouseAdapter() {
       @Override
       public void mousePressed(MouseEvent event) {
@@ -151,16 +155,24 @@ public final class FileSystemTree {
       DefaultTreeModel model,
       DefaultMutableTreeNode root,
       Path focusedPath,
-      Consumer<Path> addToChat) {
+      Actions actions) {
     var menu = new JPopupMenu();
     var add = new JMenuItem("Add to Chat");
     add.addActionListener(event -> {
       var selected = selectedPath(tree, null);
       if (selected != null) {
-        addToChat.accept(selected);
+        actions.addToChat().accept(selected);
       }
     });
     menu.add(add);
+    var createWorkspace = new JMenuItem("Create workspace");
+    createWorkspace.addActionListener(event -> {
+      var selected = selectedPath(tree, null);
+      if (selected != null) {
+        actions.createWorkspace().accept(workspaceRoot(selected));
+      }
+    });
+    menu.add(createWorkspace);
     var showHidden = new JCheckBoxMenuItem("Show Hidden");
     showHidden.addActionListener(event -> {
       var enabled = showHidden.isSelected();
@@ -175,7 +187,9 @@ public final class FileSystemTree {
     menu.addPopupMenuListener(new javax.swing.event.PopupMenuListener() {
       @Override
       public void popupMenuWillBecomeVisible(javax.swing.event.PopupMenuEvent event) {
-        add.setEnabled(selectedPath(tree, null) != null);
+        var selected = selectedPath(tree, null);
+        add.setEnabled(selected != null);
+        createWorkspace.setEnabled(selected != null);
       }
 
       @Override
@@ -189,6 +203,15 @@ public final class FileSystemTree {
       }
     });
     return menu;
+  }
+
+  private static Path workspaceRoot(Path selected) {
+    var path = selected.toAbsolutePath().normalize();
+    if (Files.isDirectory(path)) {
+      return path;
+    }
+    var parent = path.getParent();
+    return parent == null ? path : parent;
   }
 
   private static Path selectedPath(JTree tree, Path fallback) {
@@ -288,6 +311,8 @@ public final class FileSystemTree {
       return label;
     }
   }
+
+  public record Actions(Consumer<Path> addToChat, Consumer<Path> createWorkspace) {}
 
   private record Loading() {
     @Override

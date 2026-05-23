@@ -53,4 +53,8 @@ public final class ProviderSettingsController {
   public List<ModelDescriptor> refreshModels(ProviderSettings settings) {
     return registry.require(settings.provider()).refreshModels(effective(settings));
   }
+
+  public String credits(ProviderSettings settings) {
+    return "jvibe".equals(settings.provider()) ? "Credits: unavailable" : "";
+  }
 }

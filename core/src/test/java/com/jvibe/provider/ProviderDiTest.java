@@ -1,6 +1,7 @@
 package com.jvibe.provider;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.jvibe.agent.AgentRunner;
@@ -29,7 +30,8 @@ class ProviderDiTest {
           .map(ProviderClient::providerId)
           .collect(java.util.stream.Collectors.toSet());
 
-      assertTrue(providerIds.containsAll(Set.of("local", "openai", "anthropic", "mistral", "deepseek", "qwen", "openrouter")));
+      assertTrue(providerIds.containsAll(Set.of("local", "jvibe", "openai", "anthropic", "mistral", "deepseek", "qwen")));
+      assertFalse(providerIds.contains("openrouter"));
     }
   }
 }

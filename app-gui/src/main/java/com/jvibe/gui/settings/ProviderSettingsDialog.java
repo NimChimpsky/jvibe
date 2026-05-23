@@ -128,8 +128,10 @@ public final class ProviderSettingsDialog {
     private final JComboBox<String> thinking;
     private final JComboBox<RegionOption> region;
     private final JLabel status;
+    private final JLabel credits;
     private final JButton refresh;
     private final JButton test;
+    private final JButton refreshCredits;
 
     ProviderTab(ProviderDefinition definition, ProviderSettings stored) {
       this.definition = definition;
@@ -140,8 +142,10 @@ public final class ProviderSettingsDialog {
       this.thinking = new JComboBox<>();
       this.region = new JComboBox<>(RegionOption.values());
       this.status = label(" ");
+      this.credits = label("Credits: unavailable");
       this.refresh = new JButton("Refresh Models");
       this.test = new JButton("Test Connection");
+      this.refreshCredits = new JButton("Refresh Credits");
     }
 
     JComponent component() {
@@ -153,6 +157,7 @@ public final class ProviderSettingsDialog {
 
       refresh.addActionListener(event -> refreshModels());
       test.addActionListener(event -> testConnection());
+      refreshCredits.addActionListener(event -> refreshCredits());
 
       var form = new JPanel();
       form.setLayout(new BoxLayout(form, BoxLayout.Y_AXIS));
@@ -168,6 +173,15 @@ public final class ProviderSettingsDialog {
       }
       form.add(row("Model", model));
       form.add(row("Thinking", thinking));
+      if (isJvibe()) {
+        credits.setForeground(UIManager.getColor("Label.disabledForeground"));
+        credits.setText(controller.credits(settings()));
+        var creditsPanel = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 0, 0));
+        creditsPanel.add(credits);
+        creditsPanel.add(javax.swing.Box.createHorizontalStrut(8));
+        creditsPanel.add(refreshCredits);
+        form.add(row("Credits", creditsPanel));
+      }
 
       var actions = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 0, 0));
       actions.add(refresh);
@@ -195,6 +209,10 @@ public final class ProviderSettingsDialog {
 
     private boolean isQwen() {
       return "qwen".equals(definition.id());
+    }
+
+    private boolean isJvibe() {
+      return "jvibe".equals(definition.id());
     }
 
     private void refreshModels() {
@@ -246,9 +264,32 @@ public final class ProviderSettingsDialog {
       }.execute();
     }
 
+    private void refreshCredits() {
+      setBusy(true, "Refreshing credits...");
+      new SwingWorker<String, Void>() {
+        @Override
+        protected String doInBackground() {
+          return controller.credits(settings());
+        }
+
+        @Override
+        protected void done() {
+          try {
+            credits.setText(get());
+            setBusy(false, "Credits refreshed");
+            activity.accept("Refreshed credits for " + definition.displayName());
+          } catch (Exception e) {
+            setBusy(false, "Credits unavailable");
+            credits.setText("Credits: unavailable");
+          }
+        }
+      }.execute();
+    }
+
     private void setBusy(boolean busy, String message) {
       refresh.setEnabled(!busy);
       test.setEnabled(!busy);
+      refreshCredits.setEnabled(!busy);
       status.setText(message);
     }
   }

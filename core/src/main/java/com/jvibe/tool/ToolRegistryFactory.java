@@ -1,9 +1,13 @@
 package com.jvibe.tool;
 
 import com.jvibe.tool.builtin.BuiltinToolSet;
+import com.jvibe.tool.builtin.FileToolSet;
 import com.jvibe.tool.dynamic.DynamicToolRegistry;
 import com.jvibe.workspace.Workspace;
 import jakarta.inject.Singleton;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -26,6 +30,12 @@ public final class ToolRegistryFactory {
     } catch (Exception e) {
       LOGGER.warn("Dynamic tool discovery failed for {}", workspace.root(), e);
     }
+    return registry;
+  }
+
+  public ToolRegistry createDefaultChat(Path tmp, Supplier<List<Path>> references) {
+    var registry = new ToolRegistry();
+    FileToolSet.defaultChat(tmp, references).forEach(registry::register);
     return registry;
   }
 }

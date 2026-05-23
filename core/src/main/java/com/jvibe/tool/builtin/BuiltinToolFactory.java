@@ -9,11 +9,12 @@ import java.util.List;
 public final class BuiltinToolFactory {
   @Bean
   BuiltinToolSet builtinToolSet(GitService git) {
+    var fileTools = FileToolSet.workspace();
     return new BuiltinToolSet(List.of(
         ShellRunTool.registered(),
-        FileListTool.registered(),
-        FileReadTool.registered(),
-        FileWriteTool.registered(),
+        fileTools.get(0),
+        fileTools.get(1),
+        fileTools.get(2),
         FilePatchTool.registered(),
         PatchApplyTool.registered(),
         GitStatusTool.registered(git),

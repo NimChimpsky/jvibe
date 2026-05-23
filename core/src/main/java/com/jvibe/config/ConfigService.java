@@ -34,6 +34,7 @@ public final class ConfigService {
     Files.createDirectories(paths.sessions());
     Files.createDirectories(paths.tools());
     Files.createDirectories(paths.logs());
+    Files.createDirectories(paths.tmp());
 
     if (Files.notExists(paths.config())) {
       Files.writeString(paths.config(), JvibeConfig.defaults().toJson());

@@ -37,8 +37,9 @@ class GuiControllerTest {
     controller.save(new ProviderSettings("openai", "https://api.openai.com/v1", "key", "gpt-saved", "none", true));
 
     assertEquals("gpt-saved", controller.settings("openai").selectedModel());
-    assertEquals(List.of("openai", "anthropic", "mistral", "deepseek", "qwen", "openrouter"),
+    assertEquals(List.of("jvibe", "openai", "anthropic", "mistral", "deepseek", "qwen"),
         controller.configurableProviders().stream().map(definition -> definition.id()).toList());
+    assertEquals("Credits: unavailable", controller.credits(controller.settings("jvibe")));
     assertEquals(List.of("gpt-refreshed"),
         controller.refreshModels(controller.settings("openai")).stream().map(ModelDescriptor::id).toList());
   }

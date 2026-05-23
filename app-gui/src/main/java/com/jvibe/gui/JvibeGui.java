@@ -27,6 +27,7 @@ import com.jvibe.gui.controller.ProviderSettingsController;
 import com.jvibe.gui.deploy.DeployAgentDialog;
 import com.jvibe.gui.files.FileSystemTree;
 import com.jvibe.gui.log.GuiLogPanel;
+import com.jvibe.gui.output.OutputPanel;
 import com.jvibe.gui.settings.GeneralSettingsDialog;
 import com.jvibe.gui.settings.ProviderSettingsDialog;
 import com.jvibe.gui.terminal.ShellPanel;
@@ -50,7 +51,9 @@ import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Supplier;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -93,22 +96,15 @@ public final class JvibeGui {
   private FileLogService fileLogService;
   private SessionFactory sessionFactory;
   private Workspace workspace;
-  private AgentSession session;
   private JFrame frame;
-  private ChatTranscript transcript;
-  private JSplitPane chatAndShell;
-  private ShellPanel shellPanel;
+  private JTabbedPane chatTabs;
+  private ChatTabState activeTab;
+  private final Map<Path, ChatTabState> workspaceTabStates = new LinkedHashMap<>();
   private JPanel content;
-  private JComboBox<String> modelSelector;
-  private JTextArea prompt;
-  private JPanel fileReferencePanel;
-  private final List<Path> promptFileReferences = new ArrayList<>();
   private GuiLogPanel logPanel;
+  private OutputPanel outputPanel;
   private DefaultListModel<String> approvalsModel;
   private DefaultListModel<String> toolsModel;
-  private StringBuilder activeAssistantLog = new StringBuilder();
-  private int activeAssistantChars;
-  private boolean promptRunning;
   private AppTheme currentTheme = AppTheme.FLATLAF_DARK;
 
   public static void main(String[] args) {
@@ -156,8 +152,14 @@ public final class JvibeGui {
     frame.addWindowListener(new java.awt.event.WindowAdapter() {
       @Override
       public void windowClosing(java.awt.event.WindowEvent event) {
-        if (shellPanel != null) {
-          shellPanel.stopSession();
+        if (chatTabs != null) {
+          for (var index = 0; index < chatTabs.getTabCount(); index++) {
+            if (chatTabs.getComponentAt(index) instanceof JComponent component
+                && component.getClientProperty("state") instanceof ChatTabState state
+                && state.shellPanel != null) {
+              state.shellPanel.stopSession();
+            }
+          }
         }
       }
 
@@ -173,13 +175,11 @@ public final class JvibeGui {
     log("INFO", "GUI ready: " + workspace.root());
     frame.setLocationRelativeTo(null);
     frame.setVisible(true);
-    SwingUtilities.invokeLater(() -> prompt.requestFocusInWindow());
+    SwingUtilities.invokeLater(() -> activeTab.prompt.requestFocusInWindow());
   }
 
   private void initialiseCore(Path root) throws Exception {
     workspace = new Workspace(root);
-    session = sessionFactory.create(workspace);
-    refreshModelSelector();
     refreshTools();
   }
 
@@ -204,15 +204,17 @@ public final class JvibeGui {
     top.setPreferredSize(new Dimension(260, 66));
     top.add(button("Deploy Agent", event -> showDeployAgentDialog()), BorderLayout.WEST);
     top.add(button("New Chat", event -> {
-      transcript.clear();
-      appendAssistant("New chat started.");
+      activeTab.transcript.clear();
+      appendAssistant(activeTab, "New chat started.");
       log("INFO", "Started new chat");
     }), BorderLayout.EAST);
 
     var files = new JPanel(new BorderLayout(0, 8));
     files.setBorder(new EmptyBorder(8, 16, 8, 16));
     files.add(section("Files"), BorderLayout.NORTH);
-    files.add(scroll(FileSystemTree.create(workspace.root(), this::addFileReference)), BorderLayout.CENTER);
+    files.add(scroll(FileSystemTree.create(
+        workspace.root(),
+        new FileSystemTree.Actions(this::addFileReference, this::createWorkspaceTab))), BorderLayout.CENTER);
 
     var bottom = new JPanel();
     bottom.setLayout(new BoxLayout(bottom, BoxLayout.Y_AXIS));
@@ -256,83 +258,112 @@ public final class JvibeGui {
   }
 
   private void refreshModelSelector() {
-    if (modelSelector == null || modelSelectionController == null) {
+    if (activeTab == null) {
       return;
     }
-    var current = session == null ? "" : session.provider() + "/" + session.model();
-    modelSelector.removeAllItems();
+    refreshModelSelector(activeTab);
+  }
+
+  private void refreshModelSelectors() {
+    if (chatTabs == null) {
+      return;
+    }
+    for (var index = 0; index < chatTabs.getTabCount(); index++) {
+      if (chatTabs.getComponentAt(index) instanceof JComponent component
+          && component.getClientProperty("state") instanceof ChatTabState state) {
+        refreshModelSelector(state);
+      }
+    }
+  }
+
+  private void refreshModelSelector(ChatTabState state) {
+    if (state.modelSelector == null || modelSelectionController == null) {
+      return;
+    }
+    var current = state.session == null ? "" : state.session.provider() + "/" + state.session.model();
+    state.modelSelector.removeAllItems();
     var containsCurrent = false;
     for (var choice : modelSelectionController.choices()) {
       var display = choice.display();
-      modelSelector.addItem(display);
+      state.modelSelector.addItem(display);
       containsCurrent = containsCurrent || display.equals(current);
     }
     if (containsCurrent) {
-      modelSelector.setSelectedItem(current);
+      state.modelSelector.setSelectedItem(current);
     }
-    if (!containsCurrent && modelSelector.getItemCount() > 0) {
-      modelSelector.setSelectedIndex(0);
-      applySelectedModel();
-    } else if (modelSelector.getItemCount() == 0 && session != null) {
-      session.selectModel("", "");
+    if (!containsCurrent && state.modelSelector.getItemCount() > 0) {
+      state.modelSelector.setSelectedIndex(0);
+      applySelectedModel(state);
+    } else if (state.modelSelector.getItemCount() == 0 && state.session != null) {
+      state.session.selectModel("", "");
     }
   }
 
   private void applySelectedModel() {
-    if (session == null || modelSelector == null || modelSelector.getSelectedItem() == null) {
+    if (activeTab != null) {
+      applySelectedModel(activeTab);
+    }
+  }
+
+  private void applySelectedModel(ChatTabState state) {
+    if (state.session == null || state.modelSelector == null || state.modelSelector.getSelectedItem() == null) {
       return;
     }
-    var selected = modelSelector.getSelectedItem().toString();
-    modelSelectionController.apply(session, selected);
+    var selected = state.modelSelector.getSelectedItem().toString();
+    modelSelectionController.apply(state.session, selected);
     log("INFO", "Selected model: " + selected);
   }
 
   JComponent buildComposer() {
-    prompt = new JTextArea(4, 20);
-    prompt.setLineWrap(true);
-    prompt.setWrapStyleWord(true);
-    prompt.setMargin(new Insets(10, 10, 10, 10));
-    prompt.getInputMap().put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), "sendPrompt");
-    prompt.getInputMap().put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, KeyEvent.SHIFT_DOWN_MASK), "insert-break");
-    prompt.getActionMap().put("sendPrompt", new javax.swing.AbstractAction() {
+    return buildComposer(new ChatTabState(null, Path.of("."), new ArrayList<>()));
+  }
+
+  private JComponent buildComposer(ChatTabState state) {
+    state.prompt = new JTextArea(4, 20);
+    state.prompt.setLineWrap(true);
+    state.prompt.setWrapStyleWord(true);
+    state.prompt.setMargin(new Insets(10, 10, 10, 10));
+    state.prompt.getInputMap().put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), "sendPrompt");
+    state.prompt.getInputMap().put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, KeyEvent.SHIFT_DOWN_MASK), "insert-break");
+    state.prompt.getActionMap().put("sendPrompt", new javax.swing.AbstractAction() {
       @Override
       public void actionPerformed(java.awt.event.ActionEvent event) {
-        sendPrompt();
+        sendPrompt(state);
       }
     });
 
     var send = button("Send");
-    send.addActionListener(event -> sendPrompt());
+    send.addActionListener(event -> sendPrompt(state));
 
-    modelSelector = new JComboBox<>();
-    modelSelector.addActionListener(event -> applySelectedModel());
-    refreshModelSelector();
+    state.modelSelector = new JComboBox<>();
+    state.modelSelector.addActionListener(event -> applySelectedModel(state));
+    refreshModelSelector(state);
 
     var modelPanel = new JPanel();
     modelPanel.add(new JLabel("Model"));
-    modelPanel.add(modelSelector);
+    modelPanel.add(state.modelSelector);
 
     var footer = new JPanel(new BorderLayout(10, 0));
     footer.add(modelPanel, BorderLayout.WEST);
     footer.add(send, BorderLayout.EAST);
 
     var terminalRow = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.CENTER, 0, 0));
-    terminalRow.add(shellToggleButton());
+    terminalRow.add(shellToggleButton(state));
 
     var controls = new JPanel(new BorderLayout(0, 6));
     controls.add(footer, BorderLayout.NORTH);
     controls.add(terminalRow, BorderLayout.SOUTH);
 
-    fileReferencePanel = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 4, 1));
-    fileReferencePanel.setOpaque(false);
+    state.fileReferencePanel = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 4, 1));
+    state.fileReferencePanel.setOpaque(false);
     var fileReferenceRowSize = new Dimension(0, FILE_REFERENCE_ROW_HEIGHT);
-    fileReferencePanel.setMinimumSize(fileReferenceRowSize);
-    fileReferencePanel.setPreferredSize(fileReferenceRowSize);
-    fileReferencePanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, FILE_REFERENCE_ROW_HEIGHT));
+    state.fileReferencePanel.setMinimumSize(fileReferenceRowSize);
+    state.fileReferencePanel.setPreferredSize(fileReferenceRowSize);
+    state.fileReferencePanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, FILE_REFERENCE_ROW_HEIGHT));
 
     var promptStack = new JPanel(new BorderLayout(0, 4));
-    promptStack.add(fileReferencePanel, BorderLayout.NORTH);
-    promptStack.add(fixedPromptScroll(prompt), BorderLayout.CENTER);
+    promptStack.add(state.fileReferencePanel, BorderLayout.NORTH);
+    promptStack.add(fixedPromptScroll(state.prompt), BorderLayout.CENTER);
 
     var panel = new JPanel(new BorderLayout(10, 0));
     panel.setBorder(new EmptyBorder(12, 12, 12, 12));
@@ -355,6 +386,7 @@ public final class JvibeGui {
     refresh.addActionListener(event -> {
       refreshTools();
       refreshFullLog();
+      refreshOutput();
       log("INFO", "Refreshed tools");
     });
 
@@ -366,22 +398,34 @@ public final class JvibeGui {
     toolsPanel.add(header, BorderLayout.NORTH);
     toolsPanel.add(scroll(list(toolsModel)), BorderLayout.CENTER);
 
-    var topTabs = new JTabbedPane();
-    topTabs.addTab("Log", scroll(logPanel.logList()));
-    topTabs.addTab("Tools", toolsPanel);
-    topTabs.addTab("Full Log", scroll(logPanel.fullLogArea()));
+    var bottomTabs = new JTabbedPane();
+    bottomTabs.addTab("Log", scroll(logPanel.logList()));
+    bottomTabs.addTab("Tools", toolsPanel);
+    bottomTabs.addTab("Full Log", scroll(logPanel.fullLogArea()));
     refreshFullLog();
 
-    var top = new JPanel(new BorderLayout(0, 10));
-    top.setBorder(new EmptyBorder(12, 12, 8, 12));
-    top.setMinimumSize(new Dimension(360, 0));
-    top.add(topTabs, BorderLayout.CENTER);
-
-    var bottom = new JPanel(new BorderLayout());
+    var bottom = new JPanel(new BorderLayout(0, 10));
     bottom.setBorder(new EmptyBorder(8, 12, 12, 12));
     bottom.setMinimumSize(new Dimension(360, 0));
-    bottom.add(section("Approvals"), BorderLayout.NORTH);
-    bottom.add(scroll(list(approvalsModel)), BorderLayout.CENTER);
+    bottom.add(bottomTabs, BorderLayout.CENTER);
+
+    outputPanel = new OutputPanel(configService.paths().tmp(), this::log);
+    outputPanel.refresh();
+    var approvalsPanel = new JPanel(new BorderLayout());
+    approvalsPanel.setBorder(new EmptyBorder(8, 12, 12, 12));
+    approvalsPanel.add(scroll(list(approvalsModel)), BorderLayout.CENTER);
+
+    var outputWrapper = new JPanel(new BorderLayout());
+    outputWrapper.setBorder(new EmptyBorder(8, 12, 12, 12));
+    outputWrapper.add(outputPanel, BorderLayout.CENTER);
+
+    var topTabs = new JTabbedPane();
+    topTabs.addTab("Output", outputWrapper);
+    topTabs.addTab("Approvals", approvalsPanel);
+
+    var top = new JPanel(new BorderLayout());
+    top.setMinimumSize(new Dimension(360, 0));
+    top.add(topTabs, BorderLayout.CENTER);
 
     var split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, top, bottom);
     split.setResizeWeight(0.46);
@@ -396,67 +440,148 @@ public final class JvibeGui {
   }
 
   private void showChatView() {
-    transcript = new ChatTranscript();
-    shellPanel = new ShellPanel(workspace.root(), message -> log("INFO", message));
-    shellPanel.setVisible(false);
+    chatTabs = new JTabbedPane();
+    var refs = new ArrayList<Path>();
+    var defaultSession = sessionFactory.createDefaultChat(configService.paths().tmp(), () -> List.copyOf(refs));
+    var defaultState = new ChatTabState(defaultSession, configService.paths().tmp(), refs);
+    addChatTab(
+        "Chat",
+        "No workspace write access",
+        defaultState,
+        "Right click to add files to context, write access only in jvibe/tmp and accessible via \"Output\". Create a workspace for full in place file editing.");
+    chatTabs.addChangeListener(event -> {
+      var selected = chatTabs.getSelectedComponent();
+      if (selected instanceof JComponent component && component.getClientProperty("state") instanceof ChatTabState state) {
+        activeTab = state;
+        refreshTools();
+        refreshModelSelector(state);
+        SwingUtilities.invokeLater(() -> state.prompt.requestFocusInWindow());
+      }
+    });
+    chatTabs.setSelectedIndex(0);
+    activeTab = defaultState;
+    refreshTools();
+    setContent(chatTabs);
+  }
+
+  private void addChatTab(String title, String tooltip, ChatTabState state, String note) {
+    var component = buildChatTab(state, note);
+    component.putClientProperty("state", state);
+    chatTabs.addTab(title, component);
+    chatTabs.setToolTipTextAt(chatTabs.getTabCount() - 1, tooltip);
+  }
+
+  private JComponent buildChatTab(ChatTabState state, String note) {
+    state.transcript = new ChatTranscript();
+    state.shellPanel = new ShellPanel(state.shellWorkingDirectory, message -> log("INFO", message));
+    state.shellPanel.setVisible(false);
+
+    var chatContent = new JPanel(new BorderLayout());
+    if (note != null && !note.isBlank()) {
+      var noteLabel = new JLabel(note);
+      noteLabel.setBorder(new EmptyBorder(8, 12, 4, 12));
+      noteLabel.setForeground(UIManager.getColor("Label.disabledForeground"));
+      chatContent.add(noteLabel, BorderLayout.NORTH);
+    }
+    chatContent.add(scroll(state.transcript.component()), BorderLayout.CENTER);
 
     var chatAndComposer = new JPanel(new BorderLayout());
-    chatAndComposer.add(scroll(transcript.component()), BorderLayout.CENTER);
-    chatAndComposer.add(buildComposer(), BorderLayout.SOUTH);
+    chatAndComposer.add(chatContent, BorderLayout.CENTER);
+    chatAndComposer.add(buildComposer(state), BorderLayout.SOUTH);
 
-    chatAndShell = new JSplitPane(JSplitPane.VERTICAL_SPLIT, chatAndComposer, shellPanel);
-    chatAndShell.setResizeWeight(1.0);
-    chatAndShell.setDividerSize(0);
-    chatAndShell.setBorder(null);
-    setContent(chatAndShell);
+    state.chatAndShell = new JSplitPane(JSplitPane.VERTICAL_SPLIT, chatAndComposer, state.shellPanel);
+    state.chatAndShell.setResizeWeight(1.0);
+    state.chatAndShell.setDividerSize(0);
+    state.chatAndShell.setBorder(null);
+    return state.chatAndShell;
+  }
+
+  private void createWorkspaceTab(Path root) {
+    var normalized = root.toAbsolutePath().normalize();
+    var existing = workspaceTabStates.get(normalized);
+    if (existing != null) {
+      selectTab(existing);
+      return;
+    }
+    var state = new ChatTabState(sessionFactory.create(normalized), normalized, new ArrayList<>());
+    workspaceTabStates.put(normalized, state);
+    addChatTab(filename(normalized), normalized.toString(), state, null);
+    selectTab(state);
+    log("INFO", "Created workspace tab: " + normalized);
+  }
+
+  private void selectTab(ChatTabState state) {
+    for (var index = 0; index < chatTabs.getTabCount(); index++) {
+      if (chatTabs.getComponentAt(index) instanceof JComponent component
+          && component.getClientProperty("state") == state) {
+        chatTabs.setSelectedIndex(index);
+        return;
+      }
+    }
   }
 
   private void toggleTerminal() {
-    if (shellPanel != null && shellPanel.isVisible()) {
-      minimizeTerminal();
+    toggleTerminal(activeTab);
+  }
+
+  private void toggleTerminal(ChatTabState state) {
+    if (state.shellPanel != null && state.shellPanel.isVisible()) {
+      minimizeTerminal(state);
     } else {
-      showTerminal();
+      showTerminal(state);
     }
   }
 
   private void showTerminal() {
-    if (chatAndShell == null || shellPanel == null) {
+    showTerminal(activeTab);
+  }
+
+  private void showTerminal(ChatTabState state) {
+    if (state == null || state.chatAndShell == null || state.shellPanel == null) {
       return;
     }
-    shellPanel.setVisible(true);
-    chatAndShell.setDividerSize(6);
-    refresh(chatAndShell);
+    state.shellPanel.setVisible(true);
+    state.chatAndShell.setDividerSize(6);
+    refresh(state.chatAndShell);
     SwingUtilities.invokeLater(() -> {
-      var available = chatAndShell.getHeight();
-      chatAndShell.setDividerLocation(Math.max(180, available - SHELL_HEIGHT));
-      shellPanel.startOrRestore();
+      var available = state.chatAndShell.getHeight();
+      state.chatAndShell.setDividerLocation(Math.max(180, available - SHELL_HEIGHT));
+      state.shellPanel.startOrRestore();
     });
   }
 
   private void minimizeTerminal() {
-    if (chatAndShell == null || shellPanel == null) {
+    minimizeTerminal(activeTab);
+  }
+
+  private void minimizeTerminal(ChatTabState state) {
+    if (state == null || state.chatAndShell == null || state.shellPanel == null) {
       return;
     }
-    shellPanel.setVisible(false);
-    chatAndShell.setDividerSize(0);
-    chatAndShell.setDividerLocation(1.0);
-    refresh(chatAndShell);
+    state.shellPanel.setVisible(false);
+    state.chatAndShell.setDividerSize(0);
+    state.chatAndShell.setDividerLocation(1.0);
+    refresh(state.chatAndShell);
     log("INFO", "Shell minimized");
   }
 
   private void restartTerminal() {
-    if (shellPanel == null) {
+    restartTerminal(activeTab);
+  }
+
+  private void restartTerminal(ChatTabState state) {
+    if (state == null || state.shellPanel == null) {
       return;
     }
-    if (!shellPanel.isVisible()) {
-      showTerminal();
+    if (!state.shellPanel.isVisible()) {
+      showTerminal(state);
     }
-    shellPanel.restart();
+    state.shellPanel.restart();
     log("INFO", "Shell restart requested");
   }
 
   private void showSettingsDialog() {
-    new ProviderSettingsDialog(frame, providerSettingsController, this::refreshModelSelector, message -> log("INFO", message)).show();
+    new ProviderSettingsDialog(frame, providerSettingsController, this::refreshModelSelectors, message -> log("INFO", message)).show();
   }
 
   private void showGeneralSettingsDialog() {
@@ -468,8 +593,8 @@ public final class JvibeGui {
         frame,
         deploymentService,
         workspace.root(),
-        session.provider(),
-        session.model(),
+        activeTab.session.provider(),
+        activeTab.session.model(),
         message -> log("INFO", message)).show();
   }
 
@@ -511,39 +636,46 @@ public final class JvibeGui {
   }
 
   private void sendPrompt() {
-    if (promptRunning) {
+    sendPrompt(activeTab);
+  }
+
+  private void sendPrompt(ChatTabState state) {
+    if (state == null) {
+      return;
+    }
+    if (state.promptRunning) {
       log("WARN", "Prompt already running");
       return;
     }
-    var typedText = prompt.getText().trim();
-    if (typedText.isEmpty() && promptFileReferences.isEmpty()) {
+    var typedText = state.prompt.getText().trim();
+    if (typedText.isEmpty() && state.promptFileReferences.isEmpty()) {
       return;
     }
-    if (modelSelector.getSelectedItem() == null) {
+    if (state.modelSelector.getSelectedItem() == null) {
       var message = "No provider model selected. Open Providers and enable a provider.";
-      appendAssistant("Error: " + message);
+      appendAssistant(state, "Error: " + message);
       log("ERROR", message);
       return;
     }
-    var references = List.copyOf(promptFileReferences);
+    var references = List.copyOf(state.promptFileReferences);
     var text = promptTextWithReferences(typedText, references);
-    prompt.setText("");
-    clearFileReferences();
-    appendUser(typedText, references);
-    transcript.finishAssistant();
-    activeAssistantLog = new StringBuilder();
-    activeAssistantChars = 0;
-    promptRunning = true;
+    state.prompt.setText("");
+    clearFileReferences(state);
+    appendUser(state, typedText, references);
+    state.transcript.finishAssistant();
+    state.activeAssistantLog = new StringBuilder();
+    state.activeAssistantChars = 0;
+    state.promptRunning = true;
     status("Running");
-    fileLogService.prompt(session.provider(), session.model(), text);
+    fileLogService.prompt(state.session.provider(), state.session.model(), text);
     refreshFullLog();
-    log("INFO", "Prompt submitted to " + session.provider() + "/" + session.model());
+    log("INFO", "Prompt submitted to " + state.session.provider() + "/" + state.session.model());
 
     var worker = new SwingWorker<Void, AgentEvent>() {
       @Override
       protected Void doInBackground() {
         try {
-          promptController.submit(session, text).forEach(this::publish);
+          promptController.submit(state.session, text).forEach(this::publish);
         } catch (RuntimeException e) {
           publish(AgentEvent.error(e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
         }
@@ -553,14 +685,15 @@ public final class JvibeGui {
       @Override
       protected void process(java.util.List<AgentEvent> events) {
         for (var event : events) {
-          handleEvent(event);
+          handleEvent(state, event);
         }
       }
 
       @Override
       protected void done() {
-        promptRunning = false;
+        state.promptRunning = false;
         status("Ready");
+        refreshOutput();
         try {
           get();
         } catch (Exception e) {
@@ -571,24 +704,27 @@ public final class JvibeGui {
     worker.execute();
   }
 
-  private void handleEvent(AgentEvent event) {
+  private void handleEvent(ChatTabState state, AgentEvent event) {
     switch (event.type()) {
-      case ASSISTANT_DELTA -> appendAssistantDelta(event.message());
+      case ASSISTANT_DELTA -> appendAssistantDelta(state, event.message());
       case TOOL_STARTED -> log("INFO", "Tool started: " + event.message());
-      case TOOL_FINISHED -> log("INFO", "Tool finished: " + event.message());
+      case TOOL_FINISHED -> {
+        log("INFO", "Tool finished: " + event.message());
+        refreshOutput();
+      }
       case APPROVAL_REQUIRED -> {
         approvalsModel.add(0, timestamp() + " " + event.message());
         log("WARN", "Approval required: " + event.message());
       }
       case ERROR -> {
-        flushAssistantLog();
-        appendAssistant("Error: " + event.message());
+        flushAssistantLog(state);
+        appendAssistant(state, "Error: " + event.message());
         log("ERROR", event.message());
       }
       case DONE -> {
-        flushAssistantLog();
-        transcript.finishAssistant();
-        if (activeAssistantChars == 0) {
+        flushAssistantLog(state);
+        state.transcript.finishAssistant();
+        if (state.activeAssistantChars == 0) {
           log("WARN", "Run completed without assistant text");
         } else {
           log("INFO", "Run complete");
@@ -598,7 +734,7 @@ public final class JvibeGui {
   }
 
   private void refreshTools() {
-    if (session == null) {
+    if (activeTab == null || activeTab.session == null) {
       return;
     }
     if (toolsModel == null) {
@@ -606,36 +742,36 @@ public final class JvibeGui {
     } else {
       toolsModel.clear();
     }
-    session.toolRegistry().definitions().stream()
+    activeTab.session.toolRegistry().definitions().stream()
         .sorted(Comparator.comparing(ToolDefinition::id))
         .map(tool -> tool.id() + "  [" + tool.risk() + "]\n" + tool.description())
         .forEach(toolsModel::addElement);
   }
 
   private void appendUser(String text) {
-    appendUser(text, List.of());
+    appendUser(activeTab, text, List.of());
   }
 
-  private void appendUser(String text, List<Path> references) {
-    transcript.appendUser(text, references);
+  private void appendUser(ChatTabState state, String text, List<Path> references) {
+    state.transcript.appendUser(text, references);
   }
 
-  private void appendAssistant(String text) {
-    transcript.appendAssistant(text);
+  private void appendAssistant(ChatTabState state, String text) {
+    state.transcript.appendAssistant(text);
   }
 
-  private void appendAssistantDelta(String text) {
-    if (!transcript.appendAssistantDelta(text)) {
+  private void appendAssistantDelta(ChatTabState state, String text) {
+    if (!state.transcript.appendAssistantDelta(text)) {
       return;
     }
-    activeAssistantLog.append(text);
-    activeAssistantChars += text.length();
+    state.activeAssistantLog.append(text);
+    state.activeAssistantChars += text.length();
   }
 
-  private void flushAssistantLog() {
-    if (fileLogService != null && !activeAssistantLog.isEmpty()) {
-      fileLogService.assistant(session.provider(), session.model(), activeAssistantLog.toString());
-      activeAssistantLog.setLength(0);
+  private void flushAssistantLog(ChatTabState state) {
+    if (fileLogService != null && !state.activeAssistantLog.isEmpty()) {
+      fileLogService.assistant(state.session.provider(), state.session.model(), state.activeAssistantLog.toString());
+      state.activeAssistantLog.setLength(0);
       refreshFullLog();
     }
   }
@@ -663,10 +799,14 @@ public final class JvibeGui {
   }
 
   JButton shellToggleButton() {
-    var button = terminalButton(event -> toggleTerminal());
+    return shellToggleButton(activeTab);
+  }
+
+  JButton shellToggleButton(ChatTabState state) {
+    var button = terminalButton(event -> toggleTerminal(state));
     var menu = new JPopupMenu();
     var restart = menu.add("Restart Shell");
-    restart.addActionListener(event -> restartTerminal());
+    restart.addActionListener(event -> restartTerminal(state));
     button.setComponentPopupMenu(menu);
     return button;
   }
@@ -713,37 +853,43 @@ public final class JvibeGui {
   }
 
   private void addFileReference(Path path) {
-    var normalized = path.toAbsolutePath().normalize();
-    if (promptFileReferences.contains(normalized)) {
-      prompt.requestFocusInWindow();
+    if (activeTab == null) {
       return;
     }
-    promptFileReferences.add(normalized);
-    refreshFileReferences();
-    prompt.requestFocusInWindow();
+    var normalized = path.toAbsolutePath().normalize();
+    if (activeTab.promptFileReferences.contains(normalized)) {
+      activeTab.prompt.requestFocusInWindow();
+      return;
+    }
+    activeTab.promptFileReferences.add(normalized);
+    refreshFileReferences(activeTab);
+    activeTab.prompt.requestFocusInWindow();
     log("INFO", "Added file reference: " + normalized);
   }
 
-  private void clearFileReferences() {
-    promptFileReferences.clear();
-    refreshFileReferences();
+  private void clearFileReferences(ChatTabState state) {
+    state.promptFileReferences.clear();
+    refreshFileReferences(state);
   }
 
   private void removeFileReference(Path path) {
-    promptFileReferences.remove(path);
-    refreshFileReferences();
-    prompt.requestFocusInWindow();
-  }
-
-  private void refreshFileReferences() {
-    if (fileReferencePanel == null) {
+    if (activeTab == null) {
       return;
     }
-    fileReferencePanel.removeAll();
-    for (var path : promptFileReferences) {
-      fileReferencePanel.add(fileReferenceChip(path));
+    activeTab.promptFileReferences.remove(path);
+    refreshFileReferences(activeTab);
+    activeTab.prompt.requestFocusInWindow();
+  }
+
+  private void refreshFileReferences(ChatTabState state) {
+    if (state.fileReferencePanel == null) {
+      return;
     }
-    refresh(fileReferencePanel);
+    state.fileReferencePanel.removeAll();
+    for (var path : state.promptFileReferences) {
+      state.fileReferencePanel.add(fileReferenceChip(path));
+    }
+    refresh(state.fileReferencePanel);
   }
 
   JButton fileReferenceChip(Path path) {
@@ -797,6 +943,12 @@ public final class JvibeGui {
     logPanel.setFullLog(fileLogService.readAll());
   }
 
+  private void refreshOutput() {
+    if (outputPanel != null) {
+      outputPanel.refresh();
+    }
+  }
+
   private void status(String message) {
     if (message != null && !message.isBlank()) {
       log("INFO", "Status: " + message);
@@ -823,6 +975,27 @@ public final class JvibeGui {
   private static String rootMessage(Exception e) {
     var cause = e.getCause() == null ? e : e.getCause();
     return cause.getMessage() == null ? cause.getClass().getSimpleName() : cause.getMessage();
+  }
+
+  private static final class ChatTabState {
+    private final AgentSession session;
+    private final Path shellWorkingDirectory;
+    private final List<Path> promptFileReferences;
+    private ChatTranscript transcript;
+    private JSplitPane chatAndShell;
+    private ShellPanel shellPanel;
+    private JComboBox<String> modelSelector;
+    private JTextArea prompt;
+    private JPanel fileReferencePanel;
+    private StringBuilder activeAssistantLog = new StringBuilder();
+    private int activeAssistantChars;
+    private boolean promptRunning;
+
+    private ChatTabState(AgentSession session, Path shellWorkingDirectory, List<Path> promptFileReferences) {
+      this.session = session;
+      this.shellWorkingDirectory = shellWorkingDirectory;
+      this.promptFileReferences = promptFileReferences;
+    }
   }
 
   private static final class TerminalIcon implements Icon {

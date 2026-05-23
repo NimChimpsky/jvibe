@@ -138,21 +138,19 @@ class ProviderClientParsingTest {
   }
 
   @Test
-  void openRouterUsesChatCompletionsAndParsesModels() {
+  void jvibeUsesChatCompletionsAndFallsBackToStaticModels() {
     var http = new FakeProviderHttpClient();
-    http.getResponse = new HttpTextResponse(200, """
-        {"data":[{"id":"openrouter/pareto-code","context_length":2000000,"supported_parameters":["tools"]}]}
-        """);
+    http.getResponse = new HttpTextResponse(500, "{}");
     http.streamLines = List.of("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}");
-    var client = new OpenRouterProviderClient(http, new ProviderConfigService(JvibePaths.under(home)));
-    var settings = new ProviderSettings("openrouter", "https://openrouter.ai/api/v1", "key", "openrouter/pareto-code", "none", true);
+    var client = new JvibeProviderClient(http, new ProviderConfigService(JvibePaths.under(home)));
+    var settings = new ProviderSettings("jvibe", JvibeProviderClient.BASE_URL, "key", "jvibe-coder", "high", true);
 
     var models = client.refreshModels(settings);
-    client.stream(new ProviderRequest("openrouter", "openrouter/pareto-code", settings, ThinkingOption.of("none", "None"), "system", List.of(new Message(Message.Role.USER, "hello")), List.of(), Map.of())).toList();
+    client.stream(new ProviderRequest("jvibe", "jvibe-coder", settings, ThinkingOption.of("high", "High"), "system", List.of(new Message(Message.Role.USER, "hello")), List.of(), Map.of())).toList();
 
-    assertEquals("openrouter/pareto-code", models.getFirst().id());
-    assertEquals(2_000_000, models.getFirst().contextWindow());
-    assertEquals("https://openrouter.ai/api/v1/chat/completions", http.lastUri.toString());
+    assertEquals(List.of("jvibe-coder", "jvibe-agent"), models.stream().map(ModelDescriptor::id).toList());
+    assertEquals(JvibeProviderClient.BASE_URL + "/chat/completions", http.lastUri.toString());
+    assertTrue(http.lastJson.contains("\"reasoning_effort\":\"high\""));
   }
 
   @Test

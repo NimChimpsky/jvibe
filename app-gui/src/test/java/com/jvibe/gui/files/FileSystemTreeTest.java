@@ -67,13 +67,38 @@ class FileSystemTreeTest {
     var selected = (DefaultMutableTreeNode) tree.get().getSelectionPath().getLastPathComponent();
     assertEquals(1, selected.getChildCount());
 
-    var showHidden = (JCheckBoxMenuItem) tree.get().getComponentPopupMenu().getComponent(1);
+    var showHidden = (JCheckBoxMenuItem) tree.get().getComponentPopupMenu().getComponent(2);
     SwingUtilities.invokeAndWait(showHidden::doClick);
     selected = (DefaultMutableTreeNode) tree.get().getSelectionPath().getLastPathComponent();
 
     assertEquals(2, selected.getChildCount());
     assertEquals("Show Hidden", showHidden.getText());
     assertTrue(showHidden.isSelected());
+  }
+
+  @Test
+  void createWorkspaceUsesSelectedFolderAndFileParent() throws Exception {
+    var workspace = new AtomicReference<Path>();
+    Files.createDirectory(temp.resolve("src"));
+    Files.writeString(temp.resolve("README.md"), "");
+    var tree = new AtomicReference<JTree>();
+    SwingUtilities.invokeAndWait(() -> tree.set(FileSystemTree.create(
+        temp,
+        new FileSystemTree.Actions(path -> {}, workspace::set))));
+
+    var selected = tree.get().getSelectionPath();
+    tree.get().setSelectionPath(selected);
+    var createWorkspace = (JMenuItem) tree.get().getComponentPopupMenu().getComponent(1);
+    SwingUtilities.invokeAndWait(createWorkspace::doClick);
+
+    assertEquals(temp.toAbsolutePath().normalize(), workspace.get());
+    assertEquals("Create workspace", createWorkspace.getText());
+
+    var selectedNode = (DefaultMutableTreeNode) tree.get().getSelectionPath().getLastPathComponent();
+    var fileNode = (DefaultMutableTreeNode) selectedNode.getChildAt(1);
+    tree.get().setSelectionPath(new javax.swing.tree.TreePath(fileNode.getPath()));
+    SwingUtilities.invokeAndWait(createWorkspace::doClick);
+    assertEquals(temp.toAbsolutePath().normalize(), workspace.get());
   }
 
   @Test
