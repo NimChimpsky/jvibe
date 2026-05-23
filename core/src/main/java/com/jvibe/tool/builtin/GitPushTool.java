@@ -1,6 +1,5 @@
 package com.jvibe.tool.builtin;
 
-import com.jvibe.approval.ApprovalRequest;
 import com.jvibe.git.GitService;
 import com.jvibe.tool.RegisteredTool;
 import com.jvibe.tool.ToolCall;
@@ -14,7 +13,7 @@ public final class GitPushTool {
 
   public static RegisteredTool registered(GitService git) {
     return new RegisteredTool(
-        new ToolDefinition("git_push", "Git push", "Push the current Git branch.", ToolSchemas.object(), ApprovalRequest.Risk.HIGH),
+        new ToolDefinition("git_push", "Git push", "Push the current Git branch.", ToolSchemas.object()),
         (call, context) -> execute(call, context, git));
   }
 

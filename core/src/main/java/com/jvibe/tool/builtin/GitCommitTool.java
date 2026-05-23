@@ -1,6 +1,5 @@
 package com.jvibe.tool.builtin;
 
-import com.jvibe.approval.ApprovalRequest;
 import com.jvibe.git.GitService;
 import com.jvibe.tool.RegisteredTool;
 import com.jvibe.tool.ToolCall;
@@ -18,8 +17,7 @@ public final class GitCommitTool {
             "git_commit",
             "Git commit",
             "Stage all current changes and create a Git commit.",
-            ToolSchemas.object(Map.of("message", ToolSchemas.string("Commit message.")), "message"),
-            ApprovalRequest.Risk.HIGH),
+            ToolSchemas.object(Map.of("message", ToolSchemas.string("Commit message.")), "message")),
         (call, context) -> execute(call, context, git));
   }
 

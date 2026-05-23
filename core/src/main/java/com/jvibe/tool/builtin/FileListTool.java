@@ -1,6 +1,5 @@
 package com.jvibe.tool.builtin;
 
-import com.jvibe.approval.ApprovalRequest;
 import com.jvibe.tool.RegisteredTool;
 import com.jvibe.tool.ToolCall;
 import com.jvibe.tool.ToolDefinition;
@@ -23,8 +22,7 @@ public final class FileListTool {
             "file_list",
             "List files",
             "List files under the workspace. Use path '.' for the workspace root.",
-            ToolSchemas.object(Map.of("path", ToolSchemas.string("Relative path under the workspace. Defaults to '.'."))),
-            ApprovalRequest.Risk.LOW),
+            ToolSchemas.object(Map.of("path", ToolSchemas.string("Relative path under the workspace. Defaults to '.'.")))),
         (call, context) -> execute(call, context, access));
   }
 

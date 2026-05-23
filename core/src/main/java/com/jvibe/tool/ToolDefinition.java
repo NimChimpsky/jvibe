@@ -1,6 +1,5 @@
 package com.jvibe.tool;
 
-import com.jvibe.approval.ApprovalRequest;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -8,8 +7,7 @@ public record ToolDefinition(
     String id,
     String name,
     String description,
-    Map<String, Object> inputSchema,
-    ApprovalRequest.Risk risk) {
+    Map<String, Object> inputSchema) {
   private static final Pattern PROVIDER_SAFE_ID = Pattern.compile("^[a-zA-Z0-9_-]+$");
 
   public ToolDefinition {

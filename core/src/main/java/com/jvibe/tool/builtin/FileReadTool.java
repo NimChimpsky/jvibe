@@ -1,6 +1,5 @@
 package com.jvibe.tool.builtin;
 
-import com.jvibe.approval.ApprovalRequest;
 import com.jvibe.tool.RegisteredTool;
 import com.jvibe.tool.ToolCall;
 import com.jvibe.tool.ToolDefinition;
@@ -22,8 +21,7 @@ public final class FileReadTool {
             "file_read",
             "Read file",
             "Read a UTF-8 file inside the workspace.",
-            ToolSchemas.object(Map.of("path", ToolSchemas.string("Relative file path under the workspace.")), "path"),
-            ApprovalRequest.Risk.LOW),
+            ToolSchemas.object(Map.of("path", ToolSchemas.string("Relative file path under the workspace.")), "path")),
         (call, context) -> execute(call, context, access));
   }
 

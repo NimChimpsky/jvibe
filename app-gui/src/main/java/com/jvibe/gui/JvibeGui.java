@@ -45,6 +45,8 @@ import java.awt.Insets;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.event.KeyEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.LocalTime;
@@ -100,10 +102,10 @@ public final class JvibeGui {
   private JTabbedPane chatTabs;
   private ChatTabState activeTab;
   private final Map<Path, ChatTabState> workspaceTabStates = new LinkedHashMap<>();
+  private int chatSequence;
   private JPanel content;
   private GuiLogPanel logPanel;
   private OutputPanel outputPanel;
-  private DefaultListModel<String> approvalsModel;
   private DefaultListModel<String> toolsModel;
   private AppTheme currentTheme = AppTheme.FLATLAF_DARK;
 
@@ -202,12 +204,7 @@ public final class JvibeGui {
     top.setBorder(new EmptyBorder(16, 16, 12, 16));
     top.setMinimumSize(new Dimension(260, 0));
     top.setPreferredSize(new Dimension(260, 66));
-    top.add(button("Deploy Agent", event -> showDeployAgentDialog()), BorderLayout.WEST);
-    top.add(button("New Chat", event -> {
-      activeTab.transcript.clear();
-      appendAssistant(activeTab, "New chat started.");
-      log("INFO", "Started new chat");
-    }), BorderLayout.EAST);
+    top.add(button("Deploy Agent", event -> showDeployAgentDialog()), BorderLayout.CENTER);
 
     var files = new JPanel(new BorderLayout(0, 8));
     files.setBorder(new EmptyBorder(8, 16, 8, 16));
@@ -281,21 +278,26 @@ public final class JvibeGui {
       return;
     }
     var current = state.session == null ? "" : state.session.provider() + "/" + state.session.model();
-    state.modelSelector.removeAllItems();
-    var containsCurrent = false;
-    for (var choice : modelSelectionController.choices()) {
-      var display = choice.display();
-      state.modelSelector.addItem(display);
-      containsCurrent = containsCurrent || display.equals(current);
-    }
-    if (containsCurrent) {
-      state.modelSelector.setSelectedItem(current);
-    }
-    if (!containsCurrent && state.modelSelector.getItemCount() > 0) {
-      state.modelSelector.setSelectedIndex(0);
-      applySelectedModel(state);
-    } else if (state.modelSelector.getItemCount() == 0 && state.session != null) {
-      state.session.selectModel("", "");
+    state.modelSelectorRefreshing = true;
+    try {
+      state.modelSelector.removeAllItems();
+      var containsCurrent = false;
+      for (var choice : modelSelectionController.choices()) {
+        var display = choice.display();
+        state.modelSelector.addItem(display);
+        containsCurrent = containsCurrent || display.equals(current);
+      }
+      if (containsCurrent) {
+        state.modelSelector.setSelectedItem(current);
+      }
+      if (!containsCurrent && state.modelSelector.getItemCount() > 0) {
+        state.modelSelector.setSelectedIndex(0);
+        applySelectedModel(state, false);
+      } else if (state.modelSelector.getItemCount() == 0 && state.session != null) {
+        state.session.selectModel("", "");
+      }
+    } finally {
+      state.modelSelectorRefreshing = false;
     }
   }
 
@@ -306,12 +308,19 @@ public final class JvibeGui {
   }
 
   private void applySelectedModel(ChatTabState state) {
+    applySelectedModel(state, !state.modelSelectorRefreshing);
+  }
+
+  private void applySelectedModel(ChatTabState state, boolean logChange) {
     if (state.session == null || state.modelSelector == null || state.modelSelector.getSelectedItem() == null) {
       return;
     }
     var selected = state.modelSelector.getSelectedItem().toString();
+    var previous = state.session.provider() + "/" + state.session.model();
     modelSelectionController.apply(state.session, selected);
-    log("INFO", "Selected model: " + selected);
+    if (logChange && !selected.equals(previous)) {
+      log("INFO", "Selected model: " + selected);
+    }
   }
 
   JComponent buildComposer() {
@@ -376,7 +385,6 @@ public final class JvibeGui {
   }
 
   private JComponent buildInspector() {
-    approvalsModel = new DefaultListModel<>();
     if (toolsModel == null) {
       toolsModel = new DefaultListModel<>();
     }
@@ -411,17 +419,12 @@ public final class JvibeGui {
 
     outputPanel = new OutputPanel(configService.paths().tmp(), this::log);
     outputPanel.refresh();
-    var approvalsPanel = new JPanel(new BorderLayout());
-    approvalsPanel.setBorder(new EmptyBorder(8, 12, 12, 12));
-    approvalsPanel.add(scroll(list(approvalsModel)), BorderLayout.CENTER);
-
     var outputWrapper = new JPanel(new BorderLayout());
     outputWrapper.setBorder(new EmptyBorder(8, 12, 12, 12));
     outputWrapper.add(outputPanel, BorderLayout.CENTER);
 
     var topTabs = new JTabbedPane();
     topTabs.addTab("Output", outputWrapper);
-    topTabs.addTab("Approvals", approvalsPanel);
 
     var top = new JPanel(new BorderLayout());
     top.setMinimumSize(new Dimension(360, 0));
@@ -441,14 +444,8 @@ public final class JvibeGui {
 
   private void showChatView() {
     chatTabs = new JTabbedPane();
-    var refs = new ArrayList<Path>();
-    var defaultSession = sessionFactory.createDefaultChat(configService.paths().tmp(), () -> List.copyOf(refs));
-    var defaultState = new ChatTabState(defaultSession, configService.paths().tmp(), refs);
-    addChatTab(
-        "Chat",
-        "No workspace write access",
-        defaultState,
-        "Right click to add files to context, write access only in jvibe/tmp and accessible via \"Output\". Create a workspace for full in place file editing.");
+    chatSequence = 0;
+    var defaultState = createDefaultChatTab(false);
     chatTabs.addChangeListener(event -> {
       var selected = chatTabs.getSelectedComponent();
       if (selected instanceof JComponent component && component.getClientProperty("state") instanceof ChatTabState state) {
@@ -464,11 +461,80 @@ public final class JvibeGui {
     setContent(chatTabs);
   }
 
+  private ChatTabState createDefaultChatTab(boolean select) {
+    var refs = new ArrayList<Path>();
+    var session = sessionFactory.createDefaultChat(configService.paths().tmp(), () -> List.copyOf(refs));
+    var state = new ChatTabState(session, configService.paths().tmp(), refs);
+    var number = ++chatSequence;
+    addChatTab(
+        number == 1 ? "Chat" : "Chat " + number,
+        "No workspace write access",
+        state,
+        "<html>Right click to add files to context, write access only in jvibe/tmp and accessible via \"Output\".<br>Create a workspace for full in place file editing.</html>");
+    if (select) {
+      selectTab(state);
+      log("INFO", "Started new chat");
+    }
+    return state;
+  }
+
   private void addChatTab(String title, String tooltip, ChatTabState state, String note) {
     var component = buildChatTab(state, note);
     component.putClientProperty("state", state);
     chatTabs.addTab(title, component);
-    chatTabs.setToolTipTextAt(chatTabs.getTabCount() - 1, tooltip);
+    var index = chatTabs.getTabCount() - 1;
+    chatTabs.setToolTipTextAt(index, tooltip);
+    chatTabs.setTabComponentAt(index, tabTitle(title, tooltip, state));
+  }
+
+  private JComponent tabTitle(String title, String tooltip, ChatTabState state) {
+    var panel = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 4, 0));
+    panel.setOpaque(false);
+    panel.setToolTipText(tooltip);
+
+    var label = new JLabel(title);
+    label.setToolTipText(tooltip);
+    panel.add(label);
+
+    if (state.session.mode() == AgentSession.Mode.CHAT) {
+      var add = new JButton("+");
+      add.setToolTipText("New chat");
+      add.setFocusable(false);
+      add.setMargin(new Insets(0, 4, 0, 4));
+      add.setPreferredSize(new Dimension(20, 20));
+      add.addActionListener(event -> createDefaultChatTab(true));
+      panel.add(add);
+    }
+
+    var menu = new JPopupMenu();
+    menu.add("Delete").addActionListener(event -> deleteTab(state));
+    panel.setComponentPopupMenu(menu);
+    label.setComponentPopupMenu(menu);
+    panel.addMouseListener(new MouseAdapter() {
+      @Override
+      public void mousePressed(MouseEvent event) {
+        selectTab(state);
+      }
+    });
+    return panel;
+  }
+
+  private void deleteTab(ChatTabState state) {
+    for (var index = 0; index < chatTabs.getTabCount(); index++) {
+      if (chatTabs.getComponentAt(index) instanceof JComponent component
+          && component.getClientProperty("state") == state) {
+        if (state.shellPanel != null) {
+          state.shellPanel.stopSession();
+        }
+        workspaceTabStates.values().removeIf(value -> value == state);
+        chatTabs.removeTabAt(index);
+        if (chatTabs.getTabCount() == 0) {
+          createDefaultChatTab(true);
+        }
+        refreshTools();
+        return;
+      }
+    }
   }
 
   private JComponent buildChatTab(ChatTabState state, String note) {
@@ -621,11 +687,9 @@ public final class JvibeGui {
       configService.saveConfig(new JvibeConfig(
           existing.defaultProvider(),
           existing.defaultModel(),
-          existing.requireApproval(),
           existing.maxToolIterations(),
           theme.name(),
           existing.autonomyMode(),
-          existing.allowedHighRiskTools(),
           existing.gatewayEnabled(),
           existing.gatewayHost(),
           existing.gatewayPort(),
@@ -712,10 +776,6 @@ public final class JvibeGui {
         log("INFO", "Tool finished: " + event.message());
         refreshOutput();
       }
-      case APPROVAL_REQUIRED -> {
-        approvalsModel.add(0, timestamp() + " " + event.message());
-        log("WARN", "Approval required: " + event.message());
-      }
       case ERROR -> {
         flushAssistantLog(state);
         appendAssistant(state, "Error: " + event.message());
@@ -744,7 +804,7 @@ public final class JvibeGui {
     }
     activeTab.session.toolRegistry().definitions().stream()
         .sorted(Comparator.comparing(ToolDefinition::id))
-        .map(tool -> tool.id() + "  [" + tool.risk() + "]\n" + tool.description())
+        .map(tool -> tool.id() + "\n" + tool.description())
         .forEach(toolsModel::addElement);
   }
 
@@ -985,6 +1045,7 @@ public final class JvibeGui {
     private JSplitPane chatAndShell;
     private ShellPanel shellPanel;
     private JComboBox<String> modelSelector;
+    private boolean modelSelectorRefreshing;
     private JTextArea prompt;
     private JPanel fileReferencePanel;
     private StringBuilder activeAssistantLog = new StringBuilder();

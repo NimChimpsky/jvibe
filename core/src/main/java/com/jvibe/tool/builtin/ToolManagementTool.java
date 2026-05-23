@@ -1,6 +1,5 @@
 package com.jvibe.tool.builtin;
 
-import com.jvibe.approval.ApprovalRequest;
 import com.jvibe.tool.RegisteredTool;
 import com.jvibe.tool.ToolDefinition;
 import com.jvibe.tool.ToolResult;
@@ -11,17 +10,10 @@ public final class ToolManagementTool {
 
   public static RegisteredTool registered(String id) {
     return new RegisteredTool(
-        new ToolDefinition(id, id, "Manage dynamic Java tools.", ToolSchemas.object(), risk(id)),
+        new ToolDefinition(id, id, "Manage dynamic Java tools.", ToolSchemas.object()),
         (call, context) -> ToolResult.success(
             call.id(),
             Map.of("tool", id, "workspace", context.workspace().root().toString()),
             id + " is exposed; registry wiring is handled by CLI/GUI services."));
-  }
-
-  private static ApprovalRequest.Risk risk(String id) {
-    return switch (id) {
-      case "tool_list", "tool_inspect" -> ApprovalRequest.Risk.LOW;
-      default -> ApprovalRequest.Risk.HIGH;
-    };
   }
 }

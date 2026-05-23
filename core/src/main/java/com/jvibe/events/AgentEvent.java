@@ -8,7 +8,6 @@ public record AgentEvent(Type type, String message, Map<String, Object> data, In
     ASSISTANT_DELTA,
     TOOL_STARTED,
     TOOL_FINISHED,
-    APPROVAL_REQUIRED,
     ERROR,
     DONE
   }

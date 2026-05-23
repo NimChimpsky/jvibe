@@ -1,6 +1,5 @@
 package com.jvibe.tool.builtin;
 
-import com.jvibe.approval.ApprovalRequest;
 import com.jvibe.tool.RegisteredTool;
 import com.jvibe.tool.ToolCall;
 import com.jvibe.tool.ToolDefinition;
@@ -21,8 +20,7 @@ public final class FilePatchTool {
             ToolSchemas.object(Map.of(
                 "path", ToolSchemas.string("Relative file path under the workspace."),
                 "search", ToolSchemas.string("Exact text to replace."),
-                "replacement", ToolSchemas.string("Replacement text.")), "path", "search", "replacement"),
-            ApprovalRequest.Risk.HIGH),
+                "replacement", ToolSchemas.string("Replacement text.")), "path", "search", "replacement")),
         FilePatchTool::execute);
   }
 

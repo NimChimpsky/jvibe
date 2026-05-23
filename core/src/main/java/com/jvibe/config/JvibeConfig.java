@@ -9,11 +9,9 @@ import java.util.List;
 public record JvibeConfig(
     String defaultProvider,
     String defaultModel,
-    boolean requireApproval,
     int maxToolIterations,
     String theme,
     String autonomyMode,
-    List<String> allowedHighRiskTools,
     boolean gatewayEnabled,
     String gatewayHost,
     int gatewayPort,
@@ -24,7 +22,6 @@ public record JvibeConfig(
     maxToolIterations = maxToolIterations <= 0 ? 10 : maxToolIterations;
     theme = blank(theme) ? "FLATLAF_DARK" : theme;
     autonomyMode = blank(autonomyMode) ? "supervised" : autonomyMode;
-    allowedHighRiskTools = allowedHighRiskTools == null ? List.of() : List.copyOf(allowedHighRiskTools);
     gatewayHost = blank(gatewayHost) ? "127.0.0.1" : gatewayHost;
     gatewayPort = gatewayPort <= 0 ? 8737 : gatewayPort;
     deploymentProfiles = deploymentProfiles == null ? List.of() : List.copyOf(deploymentProfiles);
@@ -34,11 +31,9 @@ public record JvibeConfig(
     return new JvibeConfig(
         Config.get("jvibe.defaultProvider", "local"),
         Config.get("jvibe.defaultModel", "echo"),
-        Config.getBool("jvibe.requireApproval", true),
         Config.getInt("jvibe.maxToolIterations", 10),
         Config.get("jvibe.theme", "FLATLAF_DARK"),
         Config.get("jvibe.autonomyMode", "supervised"),
-        List.of(),
         Config.getBool("jvibe.gatewayEnabled", false),
         Config.get("jvibe.gatewayHost", "127.0.0.1"),
         Config.getInt("jvibe.gatewayPort", 8737),

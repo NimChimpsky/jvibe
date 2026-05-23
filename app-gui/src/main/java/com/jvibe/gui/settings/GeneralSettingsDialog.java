@@ -12,7 +12,6 @@ import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
-import javax.swing.JCheckBox;
 import javax.swing.JComponent;
 import javax.swing.JDialog;
 import javax.swing.JFrame;
@@ -41,7 +40,7 @@ public final class GeneralSettingsDialog {
     try {
       var dialog = new JDialog(owner, "General", true);
       dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
-      dialog.setContentPane(content(dialog, configService.config(), configService.systemPrompt()));
+      dialog.setContentPane(content(dialog, configService.config(), configService.chatPrompt(), configService.workspacePrompt()));
       dialog.setMinimumSize(new Dimension(640, 480));
       dialog.setSize(760, 560);
       dialog.setLocationRelativeTo(owner);
@@ -52,20 +51,19 @@ public final class GeneralSettingsDialog {
     }
   }
 
-  private JComponent content(JDialog dialog, JvibeConfig config, String systemPrompt) {
-    var requireApproval = new JCheckBox("Require approval", config.requireApproval());
+  private JComponent content(JDialog dialog, JvibeConfig config, String chatPrompt, String workspacePrompt) {
     var maxToolIterations = new JSpinner(new SpinnerNumberModel(config.maxToolIterations(), 1, 100, 1));
-    var prompt = new JTextArea(systemPrompt, 12, 48);
-    prompt.setLineWrap(true);
-    prompt.setWrapStyleWord(true);
+    var chatPromptArea = promptArea(chatPrompt);
+    var workspacePromptArea = promptArea(workspacePrompt);
 
     var body = new JPanel();
     body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
     body.setBorder(new EmptyBorder(16, 16, 16, 16));
-    body.add(row("Approvals", requireApproval));
     body.add(row("Max tool iterations", maxToolIterations));
-    body.add(title("System prompt"));
-    body.add(scroll(prompt));
+    body.add(title("Built-in Chat system prompt"));
+    body.add(scroll(chatPromptArea));
+    body.add(title("Built-in Workspace system prompt"));
+    body.add(scroll(workspacePromptArea));
 
     var cancel = new JButton("Cancel");
     cancel.addActionListener(event -> dialog.dispose());
@@ -76,16 +74,13 @@ public final class GeneralSettingsDialog {
         configService.saveConfig(new JvibeConfig(
             config.defaultProvider(),
             config.defaultModel(),
-            requireApproval.isSelected(),
             ((Number) maxToolIterations.getValue()).intValue(),
             config.theme(),
             config.autonomyMode(),
-            config.allowedHighRiskTools(),
             config.gatewayEnabled(),
             config.gatewayHost(),
             config.gatewayPort(),
             config.deploymentProfiles()));
-        configService.saveSystemPrompt(prompt.getText());
         log.accept("Saved general settings");
         dialog.dispose();
       } catch (IOException e) {
@@ -99,9 +94,18 @@ public final class GeneralSettingsDialog {
     buttons.add(save);
 
     var panel = new JPanel(new BorderLayout());
-    panel.add(body, BorderLayout.CENTER);
+    panel.add(new JScrollPane(body), BorderLayout.CENTER);
     panel.add(buttons, BorderLayout.SOUTH);
     return panel;
+  }
+
+  private static JTextArea promptArea(String text) {
+    var prompt = new JTextArea(text, 7, 48);
+    prompt.setLineWrap(true);
+    prompt.setWrapStyleWord(true);
+    prompt.setEditable(false);
+    prompt.setEnabled(false);
+    return prompt;
   }
 
   private static JComponent row(String label, JComponent value) {

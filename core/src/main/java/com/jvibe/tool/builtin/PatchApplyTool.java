@@ -1,6 +1,5 @@
 package com.jvibe.tool.builtin;
 
-import com.jvibe.approval.ApprovalRequest;
 import com.jvibe.tool.RegisteredTool;
 import com.jvibe.tool.ToolCall;
 import com.jvibe.tool.ToolDefinition;
@@ -24,8 +23,7 @@ public final class PatchApplyTool {
             "Apply a unified diff inside the workspace after dry-run validation.",
             ToolSchemas.object(Map.of(
                 "patch", ToolSchemas.string("Unified diff to apply."),
-                "dryRun", ToolSchemas.bool("Validate the patch without writing files.")), "patch"),
-            ApprovalRequest.Risk.HIGH),
+                "dryRun", ToolSchemas.bool("Validate the patch without writing files.")), "patch")),
         PatchApplyTool::execute);
   }
 

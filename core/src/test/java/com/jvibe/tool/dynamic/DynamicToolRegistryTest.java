@@ -38,7 +38,6 @@ class DynamicToolRegistryTest {
     Files.writeString(toolDir.resolve("src").resolve("sample").resolve("HelloTool.java"), """
         package sample;
 
-        import com.jvibe.approval.ApprovalRequest;
         import com.jvibe.tool.ToolCall;
         import com.jvibe.tool.ToolDefinition;
         import com.jvibe.tool.ToolResult;
@@ -48,7 +47,7 @@ class DynamicToolRegistryTest {
 
         public final class HelloTool implements ToolPlugin {
           public ToolDefinition definition() {
-            return new ToolDefinition("hello_tool", "Hello Tool", "Says hello", Map.of("type", "object"), ApprovalRequest.Risk.LOW);
+            return new ToolDefinition("hello_tool", "Hello Tool", "Says hello", Map.of("type", "object"));
           }
 
           public ToolResult execute(ToolCall call, ToolPluginContext context) {

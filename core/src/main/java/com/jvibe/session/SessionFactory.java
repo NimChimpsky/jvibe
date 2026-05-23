@@ -23,7 +23,7 @@ public final class SessionFactory {
   }
 
   public AgentSession create(Workspace workspace) {
-    var session = new AgentSession(workspace, toolRegistryFactory.create(workspace));
+    var session = new AgentSession(workspace, toolRegistryFactory.create(workspace), AgentSession.Mode.WORKSPACE);
     var settings = providerConfigService.settings(providerConfigService.defaultProvider());
     session.selectModel(settings.provider(), settings.selectedModel());
     return session;
@@ -31,7 +31,7 @@ public final class SessionFactory {
 
   public AgentSession createDefaultChat(Path tmp, Supplier<List<Path>> references) {
     var workspace = new Workspace(tmp);
-    var session = new AgentSession(workspace, toolRegistryFactory.createDefaultChat(tmp, references));
+    var session = new AgentSession(workspace, toolRegistryFactory.createDefaultChat(tmp, references), AgentSession.Mode.CHAT);
     var settings = providerConfigService.settings(providerConfigService.defaultProvider());
     session.selectModel(settings.provider(), settings.selectedModel());
     return session;

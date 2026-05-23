@@ -20,6 +20,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -96,7 +97,7 @@ class AgentRunnerTest {
     };
     var registry = new com.jvibe.tool.ToolRegistry();
     registry.register(new RegisteredTool(
-        new ToolDefinition("fake_call", "Fake", "Fake tool", Map.of("type", "object"), com.jvibe.approval.ApprovalRequest.Risk.LOW),
+        new ToolDefinition("fake_call", "Fake", "Fake tool", Map.of("type", "object")),
         (call, context) -> ToolResult.success(call.id(), Map.of("ok", true), "fake result")));
     var session = new AgentSession(new Workspace(temp), registry);
 
@@ -133,7 +134,7 @@ class AgentRunnerTest {
     };
     var registry = new com.jvibe.tool.ToolRegistry();
     registry.register(new RegisteredTool(
-        new ToolDefinition("fake_call", "Fake", "Fake tool", Map.of("type", "object"), com.jvibe.approval.ApprovalRequest.Risk.LOW),
+        new ToolDefinition("fake_call", "Fake", "Fake tool", Map.of("type", "object")),
         (call, context) -> ToolResult.success(call.id(), Map.of("ok", true), "fake result")));
     var session = new AgentSession(new Workspace(temp), registry);
 
@@ -176,7 +177,7 @@ class AgentRunnerTest {
     var executed = new AtomicInteger();
     var registry = new com.jvibe.tool.ToolRegistry();
     registry.register(new RegisteredTool(
-        new ToolDefinition("fake_call", "Fake", "Fake tool", Map.of("type", "object"), com.jvibe.approval.ApprovalRequest.Risk.LOW),
+        new ToolDefinition("fake_call", "Fake", "Fake tool", Map.of("type", "object")),
         (call, context) -> {
           executed.incrementAndGet();
           return ToolResult.success(call.id(), Map.of("ok", true), "fake result");
@@ -190,26 +191,7 @@ class AgentRunnerTest {
   }
 
   @Test
-  void highRiskToolRequiresApprovalByDefault() {
-    var provider = providerCalling("risky_call");
-    var executed = new AtomicInteger();
-    var registry = new com.jvibe.tool.ToolRegistry();
-    registry.register(new RegisteredTool(
-        new ToolDefinition("risky_call", "Risky", "Risky tool", Map.of("type", "object"), com.jvibe.approval.ApprovalRequest.Risk.HIGH),
-        (call, context) -> {
-          executed.incrementAndGet();
-          return ToolResult.success(call.id(), Map.of("ok", true), "risky result");
-        }));
-    var session = new AgentSession(new Workspace(temp), registry);
-
-    var events = new AgentRunner(provider, "system", 10).run(session, "use tool").toList();
-
-    assertEquals(0, executed.get());
-    assertTrue(events.stream().anyMatch(event -> event.type() == com.jvibe.events.AgentEvent.Type.APPROVAL_REQUIRED));
-  }
-
-  @Test
-  void highRiskToolExecutesInAutonomousModeWhenAllowed() throws Exception {
+  void requestedToolsExecuteWhenPresentInSessionRegistry() {
     var provider = new ProviderClient() {
       private final AtomicInteger calls = new AtomicInteger();
 
@@ -239,26 +221,41 @@ class AgentRunnerTest {
     var executed = new AtomicInteger();
     var registry = new com.jvibe.tool.ToolRegistry();
     registry.register(new RegisteredTool(
-        new ToolDefinition("risky_call", "Risky", "Risky tool", Map.of("type", "object"), com.jvibe.approval.ApprovalRequest.Risk.HIGH),
+        new ToolDefinition("risky_call", "Risky", "Risky tool", Map.of("type", "object")),
         (call, context) -> {
           executed.incrementAndGet();
           return ToolResult.success(call.id(), Map.of("ok", true), "risky result");
         }));
-    var paths = com.jvibe.config.JvibePaths.under(temp.resolve("home"));
-    var config = new com.jvibe.config.ConfigService(paths);
-    config.saveConfig(new com.jvibe.config.JvibeConfig("local", "echo", false, 10, "FLATLAF_DARK", "autonomous", List.of("*"), false, "127.0.0.1", 8737, List.of()));
-    var providerConfig = new com.jvibe.provider.ProviderConfigService(paths);
-    var runner = new AgentRunner(
-        com.jvibe.provider.ProviderRegistry.of(provider),
-        providerConfig,
-        config,
-        new com.jvibe.tool.ToolPolicy(config));
     var session = new AgentSession(new Workspace(temp), registry);
 
-    var events = runner.run(session, "use tool").toList();
+    var events = new AgentRunner(provider, "system", 10).run(session, "use tool").toList();
 
     assertEquals(1, executed.get());
     assertTrue(events.stream().anyMatch(event -> event.type() == com.jvibe.events.AgentEvent.Type.TOOL_FINISHED));
+  }
+
+  @Test
+  void usesChatPromptForChatSessions() throws Exception {
+    var captured = new AtomicReference<String>();
+    var runner = runnerCapturingSystemPrompt(captured);
+    var session = new AgentSession(new Workspace(temp), new ToolRegistry(), AgentSession.Mode.CHAT);
+
+    runner.run(session, "hello").toList();
+
+    assertTrue(captured.get().contains("default Chat mode"));
+    assertTrue(captured.get().contains("under ~/.jvibe/tmp"));
+  }
+
+  @Test
+  void usesWorkspacePromptForWorkspaceSessions() throws Exception {
+    var captured = new AtomicReference<String>();
+    var runner = runnerCapturingSystemPrompt(captured);
+    var session = new AgentSession(new Workspace(temp), new ToolRegistry(), AgentSession.Mode.WORKSPACE);
+
+    runner.run(session, "hello").toList();
+
+    assertTrue(captured.get().contains("Workspace mode"));
+    assertTrue(captured.get().contains("workspace root"));
   }
 
   private ProviderClient providerCalling(String tool) {
@@ -283,5 +280,36 @@ class AgentRunnerTest {
         return List.of();
       }
     };
+  }
+
+  private AgentRunner runnerCapturingSystemPrompt(AtomicReference<String> captured) throws Exception {
+    var provider = new ProviderClient() {
+      @Override
+      public String providerId() {
+        return "local";
+      }
+
+      @Override
+      public Stream<ProviderEvent> stream(ProviderRequest request) {
+        captured.set(request.systemPrompt());
+        return Stream.of(new ProviderEvent.Done());
+      }
+
+      @Override
+      public List<ModelDescriptor> models() {
+        return List.of();
+      }
+
+      @Override
+      public List<ModelDescriptor> refreshModels(ProviderSettings settings) {
+        return List.of();
+      }
+    };
+    var paths = com.jvibe.config.JvibePaths.under(temp.resolve("prompt-home-" + java.util.UUID.randomUUID()));
+    var config = new com.jvibe.config.ConfigService(paths);
+    return new AgentRunner(
+        com.jvibe.provider.ProviderRegistry.of(provider),
+        new com.jvibe.provider.ProviderConfigService(paths),
+        config);
   }
 }

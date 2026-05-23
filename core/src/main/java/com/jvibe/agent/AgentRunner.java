@@ -9,7 +9,6 @@ import com.jvibe.provider.ProviderRegistry;
 import com.jvibe.session.AgentSession;
 import com.jvibe.session.Message;
 import com.jvibe.tool.ToolExecutionContext;
-import com.jvibe.tool.ToolPolicy;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.Map;
@@ -24,20 +23,17 @@ public final class AgentRunner {
   private final ProviderRegistry providerRegistry;
   private final ProviderConfigService providerConfigService;
   private final com.jvibe.config.ConfigService configService;
-  private final ToolPolicy toolPolicy;
   private final String fallbackSystemPrompt;
   private final int fallbackMaxToolIterations;
 
   public AgentRunner(
       ProviderRegistry providerRegistry,
       ProviderConfigService providerConfigService,
-      com.jvibe.config.ConfigService configService,
-      ToolPolicy toolPolicy) throws java.io.IOException {
+      com.jvibe.config.ConfigService configService) throws java.io.IOException {
     this.providerRegistry = providerRegistry;
     this.providerConfigService = providerConfigService;
     this.configService = configService;
-    this.toolPolicy = toolPolicy;
-    this.fallbackSystemPrompt = configService.systemPrompt();
+    this.fallbackSystemPrompt = configService.workspacePrompt();
     this.fallbackMaxToolIterations = configService.config().maxToolIterations();
   }
 
@@ -45,7 +41,6 @@ public final class AgentRunner {
     this.providerRegistry = ProviderRegistry.of(providerClient);
     this.providerConfigService = null;
     this.configService = null;
-    this.toolPolicy = null;
     this.fallbackSystemPrompt = systemPrompt;
     this.fallbackMaxToolIterations = maxToolIterations;
   }
@@ -77,18 +72,20 @@ public final class AgentRunner {
         model,
         settings,
         thinking,
-        currentSystemPrompt(),
+        currentSystemPrompt(session),
         session.conversation().messages(),
         new ArrayList<>(session.toolRegistry().definitions()),
         Map.of());
   }
 
-  private String currentSystemPrompt() {
+  private String currentSystemPrompt(AgentSession session) {
     if (configService == null) {
       return fallbackSystemPrompt;
     }
     try {
-      return configService.systemPrompt();
+      return session.mode() == AgentSession.Mode.CHAT
+          ? configService.chatPrompt()
+          : configService.workspacePrompt();
     } catch (java.io.IOException e) {
       return fallbackSystemPrompt;
     }
@@ -179,14 +176,6 @@ public final class AgentRunner {
             }
             session.conversation().add(new Message(Message.Role.ASSISTANT, assistant.toString(), metadata, java.time.Instant.now()));
             assistant.setLength(0);
-            var definition = session.toolRegistry().find(toolCall.call().name()).map(com.jvibe.tool.RegisteredTool::definition);
-            if (definition.isPresent() && decide(definition.get()) == com.jvibe.approval.ApprovalDecision.REQUIRED) {
-              var message = "Approval required for tool: " + toolCall.call().name();
-              session.conversation().add(new Message(Message.Role.TOOL, message, Map.of("toolCallId", toolCall.call().id()), java.time.Instant.now()));
-              events.add(new AgentEvent(AgentEvent.Type.APPROVAL_REQUIRED, message, metadata, java.time.Instant.now()));
-              providerEvents = null;
-              return;
-            }
             events.add(new AgentEvent(AgentEvent.Type.TOOL_STARTED, toolCall.call().name()));
             var result = session.toolRegistry().execute(toolCall.call(), ToolExecutionContext.defaults(session.workspace()));
             session.conversation().add(new Message(Message.Role.TOOL, result.summary(), Map.of("toolCallId", result.callId()), java.time.Instant.now()));
@@ -206,15 +195,6 @@ public final class AgentRunner {
           }
         }
       }
-    }
-
-    private com.jvibe.approval.ApprovalDecision decide(com.jvibe.tool.ToolDefinition definition) {
-      if (toolPolicy != null) {
-        return toolPolicy.decide(definition);
-      }
-      return definition.risk() == com.jvibe.approval.ApprovalRequest.Risk.LOW
-          ? com.jvibe.approval.ApprovalDecision.APPROVED
-          : com.jvibe.approval.ApprovalDecision.REQUIRED;
     }
 
     private void finishAssistantMessage() {

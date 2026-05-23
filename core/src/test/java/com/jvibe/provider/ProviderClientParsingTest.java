@@ -66,7 +66,7 @@ class ProviderClientParsingTest {
         ThinkingOption.of("high", "High"),
         "system",
         List.of(new Message(Message.Role.USER, "hello")),
-        List.of(new ToolDefinition("file_list", "List", "List files", Map.of("type", "object"), com.jvibe.approval.ApprovalRequest.Risk.LOW)),
+        List.of(new ToolDefinition("file_list", "List", "List files", Map.of("type", "object"))),
         Map.of())).toList();
 
     assertEquals("mistral-large-latest", models.getFirst().id());

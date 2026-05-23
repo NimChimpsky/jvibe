@@ -6,14 +6,22 @@ import jakarta.inject.Singleton;
 
 @Singleton
 public final class ConfigService {
-  private static final String LEGACY_SYSTEM_PROMPT = """
-      You are jvibe, a Java-based coding agent. Be direct, inspect the workspace before changing files,
-      prefer small safe edits, and ask for approval before risky tool actions.
+  private static final String DEFAULT_CHAT_PROMPT = """
+      You are jvibe in default Chat mode. Be direct and answer simple conversation without tools when no file work is needed.
+      You may read only files and folders explicitly added to chat context, plus files under ~/.jvibe/tmp.
+      You may write, create, or delete files only under ~/.jvibe/tmp. Never edit attached source files in place from Chat mode.
+      Put every generated file, summary, report, patch draft, export, or other output under ~/.jvibe/tmp so it appears in the Output panel.
+      If the user asks to create summary.md, output/summary.md, or any other relative output path, write that path under ~/.jvibe/tmp.
+      Tell the user to create a workspace tab for full in-place file editing.
       """;
-  private static final String DEFAULT_SYSTEM_PROMPT = """
-      You are jvibe, a Java-based coding agent. Be direct and answer simple conversation without tools.
-      Use tools only when the user asks for workspace inspection, code changes, command execution, or current repo state.
-      Prefer small safe edits, and ask for approval before risky tool actions.
+  private static final String DEFAULT_WORKSPACE_PROMPT = """
+      You are jvibe in Workspace mode, a Java-based coding agent. Be direct, inspect the workspace before changing files,
+      and prefer small safe edits.
+      Reads and writes are rooted at the selected workspace folder.
+      Edit files in place under the selected workspace root when the user asks for code or file changes.
+      If the user asks to create summary.md or any other relative output path, write it relative to the workspace root unless they specify a subpath.
+      When summarising a directory and no output path is specified, create summary.md in the workspace root by default.
+      Respect workspace boundaries and ask for approval before risky tool actions.
       """;
 
   private final JvibePaths paths;
@@ -30,7 +38,7 @@ public final class ConfigService {
     Files.createDirectories(paths.home());
     Files.createDirectories(paths.config().getParent());
     Files.createDirectories(paths.providers().getParent());
-    Files.createDirectories(paths.systemPrompt().getParent());
+    Files.createDirectories(paths.chatPrompt().getParent());
     Files.createDirectories(paths.sessions());
     Files.createDirectories(paths.tools());
     Files.createDirectories(paths.logs());
@@ -38,24 +46,25 @@ public final class ConfigService {
 
     if (Files.notExists(paths.config())) {
       Files.writeString(paths.config(), JvibeConfig.defaults().toJson());
+    } else {
+      Files.writeString(paths.config(), JvibeConfig.fromJson(Files.readString(paths.config())).toJson());
     }
     if (Files.notExists(paths.providers())) {
       Files.writeString(paths.providers(), "{\n  \"providers\": []\n}\n");
     }
-    if (Files.notExists(paths.systemPrompt())) {
-      Files.writeString(paths.systemPrompt(), DEFAULT_SYSTEM_PROMPT);
-    } else if (Files.readString(paths.systemPrompt()).equals(LEGACY_SYSTEM_PROMPT)) {
-      Files.writeString(paths.systemPrompt(), DEFAULT_SYSTEM_PROMPT);
-    }
+    Files.writeString(paths.chatPrompt(), DEFAULT_CHAT_PROMPT);
+    Files.writeString(paths.workspacePrompt(), DEFAULT_WORKSPACE_PROMPT);
+    Files.deleteIfExists(paths.home().resolve("prompts").resolve("system.md"));
   }
 
-  public String systemPrompt() throws IOException {
-    return Files.readString(paths.systemPrompt());
-  }
-
-  public void saveSystemPrompt(String prompt) throws IOException {
+  public String chatPrompt() throws IOException {
     bootstrap();
-    Files.writeString(paths.systemPrompt(), prompt == null ? "" : prompt);
+    return Files.readString(paths.chatPrompt());
+  }
+
+  public String workspacePrompt() throws IOException {
+    bootstrap();
+    return Files.readString(paths.workspacePrompt());
   }
 
   public JvibeConfig config() throws IOException {

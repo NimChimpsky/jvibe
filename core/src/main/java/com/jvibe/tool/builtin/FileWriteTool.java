@@ -1,6 +1,5 @@
 package com.jvibe.tool.builtin;
 
-import com.jvibe.approval.ApprovalRequest;
 import com.jvibe.tool.RegisteredTool;
 import com.jvibe.tool.ToolCall;
 import com.jvibe.tool.ToolDefinition;
@@ -13,10 +12,10 @@ public final class FileWriteTool {
   private FileWriteTool() {}
 
   public static RegisteredTool registered() {
-    return registered(FileToolAccess.workspace(), ApprovalRequest.Risk.HIGH, "Write file", "Write a UTF-8 file inside the workspace.");
+    return registered(FileToolAccess.workspace(), "Write file", "Write a UTF-8 file inside the workspace.");
   }
 
-  public static RegisteredTool registered(FileToolAccess access, ApprovalRequest.Risk risk, String name, String description) {
+  public static RegisteredTool registered(FileToolAccess access, String name, String description) {
     return new RegisteredTool(
         new ToolDefinition(
             "file_write",
@@ -24,8 +23,7 @@ public final class FileWriteTool {
             description,
             ToolSchemas.object(Map.of(
                 "path", ToolSchemas.string("Relative file path under the workspace."),
-                "content", ToolSchemas.string("Full file content to write.")), "path", "content"),
-            risk),
+                "content", ToolSchemas.string("Full file content to write.")), "path", "content")),
         (call, context) -> execute(call, context, access));
   }
 

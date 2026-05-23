@@ -1,6 +1,5 @@
 package com.jvibe.tool.dynamic;
 
-import com.jvibe.approval.ApprovalRequest;
 import com.jvibe.config.JvibePaths;
 import com.jvibe.git.GitService;
 import com.jvibe.tool.RegisteredTool;
@@ -93,8 +92,7 @@ public final class DynamicToolRegistry {
           loadedTool.manifest().id(),
           definition.name(),
           definition.description(),
-          definition.inputSchema(),
-          ApprovalRequest.Risk.HIGH);
+          definition.inputSchema());
     }
     var finalDefinition = definition;
     return new RegisteredTool(finalDefinition, (ToolCall call, ToolExecutionContext context) -> {

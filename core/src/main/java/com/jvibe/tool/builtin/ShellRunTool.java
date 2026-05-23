@@ -1,6 +1,5 @@
 package com.jvibe.tool.builtin;
 
-import com.jvibe.approval.ApprovalRequest;
 import com.jvibe.tool.RegisteredTool;
 import com.jvibe.tool.ToolCall;
 import com.jvibe.tool.ToolDefinition;
@@ -22,8 +21,7 @@ public final class ShellRunTool {
             "shell_run",
             "Run shell command",
             "Run a shell command in the workspace using JVM process APIs.",
-            ToolSchemas.object(Map.of("command", ToolSchemas.string("Shell command to run from the workspace root.")), "command"),
-            ApprovalRequest.Risk.HIGH),
+            ToolSchemas.object(Map.of("command", ToolSchemas.string("Shell command to run from the workspace root.")), "command")),
         ShellRunTool::execute);
   }
 
