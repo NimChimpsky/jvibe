@@ -187,8 +187,8 @@ public final class JvibeGui {
 
   private JComponent buildRoot() {
     var rootTabs = new JTabbedPane();
-    rootTabs.addTab("Dashboard", buildDashboard());
-    rootTabs.addTab("Agent Swarm", agentSwarmPanelFactory.create(frame, this::agentSwarmContext, message -> log("INFO", message)));
+    rootTabs.addTab("Desktop", buildDashboard());
+    rootTabs.addTab("Agent Orchestrator", agentSwarmPanelFactory.create(frame, this::agentSwarmContext, message -> log("INFO", message)));
     return rootTabs;
   }
 

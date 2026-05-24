@@ -29,7 +29,7 @@ public final class AgentSwarmPanelFactory {
     panel.setBorder(new EmptyBorder(18, 18, 18, 18));
 
     var header = new JPanel(new BorderLayout(0, 8));
-    header.add(title("Agent Swarm"), BorderLayout.NORTH);
+    header.add(title("Agent Orchestrator"), BorderLayout.NORTH);
     header.add(description("Deploy the CLI as a long-running autonomous agent."), BorderLayout.CENTER);
     panel.add(header, BorderLayout.NORTH);
 
