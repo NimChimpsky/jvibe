@@ -1,6 +1,6 @@
 # JVibe
 
-Java-based LLM coding agent with CLI and Swing GUI runtimes.
+Java-based LLM coding agent and agent orchestrator.  JVM focussed tools, and dynamic tool creation.
 
 ## Build All
 
