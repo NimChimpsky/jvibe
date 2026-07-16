@@ -1,7 +1,7 @@
 package com.jvibe.gui.controller;
 
-public record ModelChoice(String provider, String model) {
+public record ModelChoice(String provider, String providerName, String model) {
   public String display() {
-    return provider + "/" + model;
+    return providerName + "/" + model;
   }
 }

@@ -7,7 +7,8 @@ import java.util.UUID;
 public final class AgentSession {
   public enum Mode {
     CHAT,
-    WORKSPACE
+    WORKSPACE,
+    REMOTE_SSH
   }
 
   private final String id;
@@ -19,7 +20,7 @@ public final class AgentSession {
   private String model;
 
   public AgentSession(Workspace workspace, ToolRegistry toolRegistry) {
-    this(UUID.randomUUID().toString(), workspace, toolRegistry, "local", "echo", Mode.WORKSPACE);
+    this(UUID.randomUUID().toString(), workspace, toolRegistry, "jvibe", "jvibe-coder", Mode.WORKSPACE);
   }
 
   public AgentSession(String id, Workspace workspace, ToolRegistry toolRegistry, String provider, String model) {
@@ -27,7 +28,7 @@ public final class AgentSession {
   }
 
   public AgentSession(Workspace workspace, ToolRegistry toolRegistry, Mode mode) {
-    this(UUID.randomUUID().toString(), workspace, toolRegistry, "local", "echo", mode);
+    this(UUID.randomUUID().toString(), workspace, toolRegistry, "jvibe", "jvibe-coder", mode);
   }
 
   public AgentSession(String id, Workspace workspace, ToolRegistry toolRegistry, String provider, String model, Mode mode) {

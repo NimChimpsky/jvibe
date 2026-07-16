@@ -13,6 +13,10 @@ public final class ToolRegistry {
     tools.put(tool.definition().id(), tool);
   }
 
+  public void unregister(String id) {
+    tools.remove(id);
+  }
+
   public Optional<RegisteredTool> find(String id) {
     return Optional.ofNullable(tools.get(id));
   }

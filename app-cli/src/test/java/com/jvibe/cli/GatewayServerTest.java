@@ -25,4 +25,20 @@ class GatewayServerTest {
       server.stop(0);
     }
   }
+
+  @Test
+  void rejectsEmptyTask() throws Exception {
+    var server = new GatewayServer(null, null, "127.0.0.1", 0, Path.of(".")).start();
+    try {
+      var response = HttpClient.newHttpClient().send(
+          HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/tasks"))
+              .POST(HttpRequest.BodyPublishers.ofString("   "))
+              .build(),
+          HttpResponse.BodyHandlers.discarding());
+
+      assertEquals(400, response.statusCode());
+    } finally {
+      server.stop(0);
+    }
+  }
 }

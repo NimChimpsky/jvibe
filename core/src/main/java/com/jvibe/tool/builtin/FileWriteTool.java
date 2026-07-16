@@ -5,7 +5,7 @@ import com.jvibe.tool.ToolCall;
 import com.jvibe.tool.ToolDefinition;
 import com.jvibe.tool.ToolExecutionContext;
 import com.jvibe.tool.ToolResult;
-import java.nio.file.Files;
+import com.jvibe.config.AtomicFiles;
 import java.util.Map;
 
 public final class FileWriteTool {
@@ -30,8 +30,10 @@ public final class FileWriteTool {
   static ToolResult execute(ToolCall call, ToolExecutionContext context, FileToolAccess access) throws Exception {
     var path = access.resolveWritable(context.workspace(), ToolArguments.string(call.arguments(), "path"));
     var content = ToolArguments.string(call.arguments(), "content", "");
-    Files.createDirectories(path.getParent());
-    Files.writeString(path, content);
-    return ToolResult.success(call.id(), Map.of("path", path.toString(), "bytes", content.getBytes().length), "Wrote " + path.getFileName());
+    AtomicFiles.writeString(path, content);
+    return ToolResult.success(
+        call.id(),
+        Map.of("path", path.toString(), "bytes", content.getBytes(java.nio.charset.StandardCharsets.UTF_8).length),
+        "Wrote " + path.getFileName());
   }
 }

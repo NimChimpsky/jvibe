@@ -30,7 +30,8 @@ class ProviderDiTest {
           .map(ProviderClient::providerId)
           .collect(java.util.stream.Collectors.toSet());
 
-      assertTrue(providerIds.containsAll(Set.of("local", "jvibe", "openai", "anthropic", "mistral", "deepseek", "qwen")));
+      assertTrue(providerIds.containsAll(Set.of("jvibe", "openai", "anthropic", "mistral", "deepseek", "qwen")));
+      assertFalse(providerIds.contains("local"));
       assertFalse(providerIds.contains("openrouter"));
     }
   }

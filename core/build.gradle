@@ -8,6 +8,10 @@ dependencies {
   annotationProcessor "io.avaje:avaje-jsonb-generator:${avajeJsonbVersion}"
 
   implementation 'jakarta.inject:jakarta.inject-api:2.0.1'
+  implementation "jakarta.annotation:jakarta.annotation-api:${jakartaAnnotationVersion}"
+  implementation "org.apache.sshd:sshd-core:${minaSshdVersion}"
+  implementation "org.apache.sshd:sshd-sftp:${minaSshdVersion}"
+  implementation "org.apache.sshd:sshd-putty:${minaSshdVersion}"
   implementation 'org.slf4j:slf4j-api:2.0.17'
 
   testAnnotationProcessor "io.avaje:avaje-inject-generator:${avajeInjectVersion}"

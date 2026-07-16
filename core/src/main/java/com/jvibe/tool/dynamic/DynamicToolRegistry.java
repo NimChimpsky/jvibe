@@ -14,11 +14,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
+import jakarta.annotation.PreDestroy;
 
 @Singleton
 public final class DynamicToolRegistry {
@@ -33,7 +33,7 @@ public final class DynamicToolRegistry {
     this(paths.tools(), buildService, gitService);
   }
 
-  public DynamicToolRegistry(Path userToolsDir, ToolBuildService buildService) {
+  DynamicToolRegistry(Path userToolsDir, ToolBuildService buildService) {
     this(userToolsDir, buildService, new GitService());
   }
 
@@ -43,7 +43,7 @@ public final class DynamicToolRegistry {
     this.gitService = gitService;
   }
 
-  public Map<String, LoadedDynamicTool> loaded() {
+  public synchronized Map<String, LoadedDynamicTool> loaded() {
     return Map.copyOf(loaded);
   }
 
@@ -57,10 +57,13 @@ public final class DynamicToolRegistry {
     }
   }
 
-  public LoadedDynamicTool buildLoadAndRegister(Path toolDir, ToolRegistry targetRegistry) throws Exception {
+  public synchronized LoadedDynamicTool buildLoadAndRegister(Path toolDir, ToolRegistry targetRegistry) throws Exception {
     var manifest = ToolManifest.parse(Files.readString(toolDir.resolve("tool.json")));
     if (!manifest.enabled()) {
       throw new IllegalStateException("Tool is disabled: " + manifest.id());
+    }
+    if (!manifest.approved()) {
+      throw new IllegalStateException("Tool requires approval before build and execution: " + manifest.id());
     }
     var build = buildService.build(toolDir, manifest);
     if (!build.success()) {
@@ -70,19 +73,48 @@ public final class DynamicToolRegistry {
     var type = Class.forName(manifest.entryClass(), true, loader);
     var plugin = (ToolPlugin) type.getDeclaredConstructor().newInstance();
     var loadedTool = new LoadedDynamicTool(manifest, build.jar(), loader, plugin);
-    loaded.put(manifest.id(), loadedTool);
+    closeLoaded(loaded.put(manifest.id(), loadedTool));
     targetRegistry.register(asRegisteredTool(loadedTool, targetRegistry));
     return loadedTool;
+  }
+
+  public synchronized void unload(String id, ToolRegistry targetRegistry) {
+    closeLoaded(loaded.remove(id));
+    targetRegistry.unregister(id);
   }
 
   private void discoverDirectory(Path root, ToolRegistry targetRegistry) throws Exception {
     try (var stream = Files.list(root)) {
       for (var toolDir : stream.filter(Files::isDirectory).toList()) {
         if (Files.exists(toolDir.resolve("tool.json"))) {
-          buildLoadAndRegister(toolDir, targetRegistry);
+          try {
+            var manifest = ToolManifest.parse(Files.readString(toolDir.resolve("tool.json")));
+            if (manifest.enabled() && manifest.approved()) {
+              buildLoadAndRegister(toolDir, targetRegistry);
+            }
+          } catch (Exception e) {
+            LOGGER.warn("Unable to load dynamic tool from {}", toolDir, e);
+          }
         }
       }
     }
+  }
+
+  private static void closeLoaded(LoadedDynamicTool tool) {
+    if (tool == null) {
+      return;
+    }
+    try {
+      tool.classLoader().close();
+    } catch (java.io.IOException e) {
+      LOGGER.warn("Unable to close classloader for dynamic tool {}", tool.manifest().id(), e);
+    }
+  }
+
+  @PreDestroy
+  public synchronized void close() {
+    loaded.values().forEach(DynamicToolRegistry::closeLoaded);
+    loaded.clear();
   }
 
   private RegisteredTool asRegisteredTool(LoadedDynamicTool loadedTool, ToolRegistry registry) {
@@ -101,7 +133,7 @@ public final class DynamicToolRegistry {
           registry,
           gitService,
           LOGGER,
-          new AtomicBoolean(context.cancelled().get()));
+          context.cancelled());
       return loadedTool.plugin().execute(call, pluginContext);
     });
   }

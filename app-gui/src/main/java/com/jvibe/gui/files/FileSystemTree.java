@@ -6,7 +6,6 @@ import java.awt.event.MouseEvent;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
@@ -76,6 +75,7 @@ public final class FileSystemTree {
       }
     });
     focusPath(tree, model, root, focusedPath, false);
+    javax.swing.SwingUtilities.invokeLater(() -> focusPath(tree, model, root, focusedPath, showHidden(tree)));
     return tree;
   }
 
@@ -122,7 +122,7 @@ public final class FileSystemTree {
       boolean showHidden) {
     var currentNode = root;
     var currentPath = ((Entry) root.getUserObject()).path();
-    loadChildren(model, currentNode, true);
+    loadChildren(model, currentNode, showHidden);
     for (var name : currentPath.relativize(focusedPath)) {
       var nextPath = currentPath.resolve(name);
       var nextNode = childForPath(currentNode, nextPath);
@@ -131,9 +131,8 @@ public final class FileSystemTree {
       }
       currentNode = nextNode;
       currentPath = nextPath;
-      loadChildren(model, currentNode, true);
+      loadChildren(model, currentNode, showHidden);
     }
-    reloadLoadedNodes(model, root, showHidden);
     var treePath = new TreePath(currentNode.getPath());
     tree.expandPath(treePath);
     tree.setSelectionPath(treePath);
@@ -233,36 +232,6 @@ public final class FileSystemTree {
     var path = tree.getPathForLocation(event.getX(), event.getY());
     if (path != null) {
       tree.setSelectionPath(path);
-    }
-  }
-
-  private static void reloadLoadedNodes(DefaultTreeModel model, DefaultMutableTreeNode root, boolean showHidden) {
-    for (var node : loadedDirectoryNodes(root)) {
-      if (node.getUserObject() instanceof Entry entry && entry.directory() && !entry.error()) {
-        node.removeAllChildren();
-        for (var child : children(entry.path(), showHidden)) {
-          node.add(node(child));
-        }
-        model.reload(node);
-      }
-    }
-  }
-
-  private static List<DefaultMutableTreeNode> loadedDirectoryNodes(DefaultMutableTreeNode root) {
-    var nodes = new ArrayList<DefaultMutableTreeNode>();
-    collectLoadedDirectoryNodes(root, nodes);
-    return nodes;
-  }
-
-  private static void collectLoadedDirectoryNodes(
-      DefaultMutableTreeNode node,
-      List<DefaultMutableTreeNode> nodes) {
-    if (!(node.getUserObject() instanceof Entry entry) || !entry.directory() || hasLoadingPlaceholder(node)) {
-      return;
-    }
-    nodes.add(node);
-    for (var index = 0; index < node.getChildCount(); index++) {
-      collectLoadedDirectoryNodes((DefaultMutableTreeNode) node.getChildAt(index), nodes);
     }
   }
 

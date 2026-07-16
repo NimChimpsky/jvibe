@@ -47,6 +47,8 @@ public final class ToolBuildService {
     args.add(classesDir.toString());
     args.add("-classpath");
     args.add(System.getProperty("java.class.path"));
+    args.add("--release");
+    args.add(Integer.toString(Runtime.version().feature()));
     for (var source : sources) {
       args.add(source.toString());
     }
@@ -63,29 +65,49 @@ public final class ToolBuildService {
 
   private ToolBuildResult buildWithGradle(Path toolDir) throws IOException {
     try {
-      var process = new ProcessBuilder("gradle", "clean", "jar")
+      var command = gradleCommand(toolDir);
+      var process = new ProcessBuilder(command)
           .directory(toolDir.toFile())
           .redirectErrorStream(true)
           .start();
-      var finished = process.waitFor(180, java.util.concurrent.TimeUnit.SECONDS);
-      var output = new String(process.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-      if (!finished) {
-        process.destroyForcibly();
-        return new ToolBuildResult(false, null, "Gradle build timed out\n" + output);
-      }
-      if (process.exitValue() != 0) {
-        return new ToolBuildResult(false, null, output);
-      }
-      try (var stream = Files.walk(toolDir.resolve("build").resolve("libs"))) {
-        var jar = stream.filter(path -> path.toString().endsWith(".jar")).findFirst().orElse(null);
-        return jar == null
-            ? new ToolBuildResult(false, null, "Gradle build produced no jar")
-            : new ToolBuildResult(true, jar, output);
+      try (var readers = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+        var outputReader = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+          try {
+            return new String(process.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+          } catch (IOException e) {
+            return "Unable to read Gradle output: " + e.getMessage();
+          }
+        }, readers);
+        var finished = process.waitFor(180, java.util.concurrent.TimeUnit.SECONDS);
+        if (!finished) {
+          process.destroyForcibly();
+          process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
+          var output = outputReader.join();
+          return new ToolBuildResult(false, null, "Gradle build timed out\n" + output);
+        }
+        var output = outputReader.join();
+        if (process.exitValue() != 0) {
+          return new ToolBuildResult(false, null, output);
+        }
+        try (var stream = Files.walk(toolDir.resolve("build").resolve("libs"))) {
+          var jar = stream.filter(path -> path.toString().endsWith(".jar")).findFirst().orElse(null);
+          return jar == null
+              ? new ToolBuildResult(false, null, "Gradle build produced no jar")
+              : new ToolBuildResult(true, jar, output);
+        }
       }
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       return new ToolBuildResult(false, null, "Gradle build interrupted");
     }
+  }
+
+  private static java.util.List<String> gradleCommand(Path toolDir) {
+    var windows = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("win");
+    var wrapper = toolDir.resolve(windows ? "gradlew.bat" : "gradlew");
+    return Files.isRegularFile(wrapper)
+        ? java.util.List.of(wrapper.toAbsolutePath().toString(), "clean", "jar", "--no-daemon")
+        : java.util.List.of("gradle", "clean", "jar", "--no-daemon");
   }
 
   private static void createJar(Path classesDir, Path jar) throws IOException {

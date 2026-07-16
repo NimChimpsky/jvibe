@@ -9,6 +9,7 @@ import com.jvibe.provider.ProviderEvent;
 import com.jvibe.provider.ProviderRequest;
 import com.jvibe.provider.ProviderSettings;
 import com.jvibe.session.AgentSession;
+import com.jvibe.session.Message;
 import com.jvibe.tool.RegisteredTool;
 import com.jvibe.tool.ToolCall;
 import com.jvibe.tool.ToolDefinition;
@@ -59,7 +60,7 @@ class AgentRunnerTest {
 
     var registry = new ToolRegistry();
     registry.register(FileListTool.registered());
-    var session = new AgentSession(new Workspace(temp), registry);
+    var session = localSession(registry, AgentSession.Mode.WORKSPACE);
     var events = new AgentRunner(provider, "system", 10).run(session, "list files").toList();
 
     assertTrue(events.stream().anyMatch(event -> event.type() == com.jvibe.events.AgentEvent.Type.TOOL_FINISHED));
@@ -81,7 +82,10 @@ class AgentRunnerTest {
         if (calls.getAndIncrement() == 0) {
           return Stream.of(new ProviderEvent.ToolCallRequested(new ToolCall("fake_call", Map.of())));
         }
-        assertTrue(request.messages().stream().anyMatch(message -> message.role() == com.jvibe.session.Message.Role.TOOL));
+        assertTrue(request.messages().stream().anyMatch(message ->
+            message.role() == com.jvibe.session.Message.Role.TOOL
+                && message.content().contains("\"ok\":true")
+                && message.content().contains("fake result")));
         return Stream.of(new ProviderEvent.AssistantDelta("used tool"), new ProviderEvent.Done());
       }
 
@@ -99,11 +103,51 @@ class AgentRunnerTest {
     registry.register(new RegisteredTool(
         new ToolDefinition("fake_call", "Fake", "Fake tool", Map.of("type", "object")),
         (call, context) -> ToolResult.success(call.id(), Map.of("ok", true), "fake result")));
-    var session = new AgentSession(new Workspace(temp), registry);
+    var session = localSession(registry, AgentSession.Mode.WORKSPACE);
 
     var events = new AgentRunner(provider, "system", 10).run(session, "use tool").toList();
 
     assertTrue(events.stream().anyMatch(event -> event.message().contains("used tool")));
+  }
+
+  @Test
+  void executesEveryToolCallFromOneProviderResponseBeforeContinuing() {
+    var calls = new AtomicInteger();
+    var executed = new AtomicInteger();
+    var provider = new ProviderClient() {
+      @Override public String providerId() { return "local"; }
+
+      @Override
+      public Stream<ProviderEvent> stream(ProviderRequest request) {
+        if (calls.getAndIncrement() == 0) {
+          return Stream.of(
+              new ProviderEvent.ToolCallRequested(new ToolCall("call_1", "first_tool", Map.of())),
+              new ProviderEvent.ToolCallRequested(new ToolCall("call_2", "second_tool", Map.of())),
+              new ProviderEvent.Done());
+        }
+        assertEquals(2, request.messages().stream().filter(message -> message.role() == Message.Role.TOOL).count());
+        return Stream.of(new ProviderEvent.AssistantDelta("complete"), new ProviderEvent.Done());
+      }
+
+      @Override public List<ModelDescriptor> models() { return List.of(); }
+      @Override public List<ModelDescriptor> refreshModels(ProviderSettings settings) { return List.of(); }
+    };
+    var registry = new ToolRegistry();
+    for (var id : List.of("first_tool", "second_tool")) {
+      registry.register(new RegisteredTool(
+          new ToolDefinition(id, id, id, Map.of("type", "object")),
+          (call, context) -> {
+            executed.incrementAndGet();
+            return ToolResult.success(call.id(), Map.of("tool", id), "done");
+          }));
+    }
+
+    var events = new AgentRunner(provider, "system", 10)
+        .run(localSession(registry, AgentSession.Mode.WORKSPACE), "run both")
+        .toList();
+
+    assertEquals(2, executed.get());
+    assertTrue(events.stream().anyMatch(event -> event.message().contains("complete")));
   }
 
   @Test
@@ -136,13 +180,13 @@ class AgentRunnerTest {
     registry.register(new RegisteredTool(
         new ToolDefinition("fake_call", "Fake", "Fake tool", Map.of("type", "object")),
         (call, context) -> ToolResult.success(call.id(), Map.of("ok", true), "fake result")));
-    var session = new AgentSession(new Workspace(temp), registry);
+    var session = localSession(registry, AgentSession.Mode.WORKSPACE);
 
     new AgentRunner(provider, "system", 1).run(session, "use tool").toList();
 
     var assistantToolMessage = session.conversation().messages().stream()
         .filter(message -> message.role() == com.jvibe.session.Message.Role.ASSISTANT)
-        .filter(message -> message.metadata().containsKey("toolCallId"))
+        .filter(message -> message.metadata().containsKey("toolCalls"))
         .findFirst()
         .orElseThrow();
     assertEquals("I will inspect.", assistantToolMessage.content());
@@ -182,7 +226,7 @@ class AgentRunnerTest {
           executed.incrementAndGet();
           return ToolResult.success(call.id(), Map.of("ok", true), "fake result");
         }));
-    var session = new AgentSession(new Workspace(temp), registry);
+    var session = localSession(registry, AgentSession.Mode.WORKSPACE);
 
     var events = new AgentRunner(provider, "system", 1).run(session, "use tool").toList();
 
@@ -226,7 +270,7 @@ class AgentRunnerTest {
           executed.incrementAndGet();
           return ToolResult.success(call.id(), Map.of("ok", true), "risky result");
         }));
-    var session = new AgentSession(new Workspace(temp), registry);
+    var session = localSession(registry, AgentSession.Mode.WORKSPACE);
 
     var events = new AgentRunner(provider, "system", 10).run(session, "use tool").toList();
 
@@ -282,11 +326,15 @@ class AgentRunnerTest {
     };
   }
 
+  private AgentSession localSession(ToolRegistry registry, AgentSession.Mode mode) {
+    return new AgentSession("test", new Workspace(temp), registry, "local", "echo", mode);
+  }
+
   private AgentRunner runnerCapturingSystemPrompt(AtomicReference<String> captured) throws Exception {
     var provider = new ProviderClient() {
       @Override
       public String providerId() {
-        return "local";
+        return "jvibe";
       }
 
       @Override

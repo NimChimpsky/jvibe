@@ -23,7 +23,8 @@ final class ProviderMessageMapper {
         case SYSTEM -> messages.add(Map.of("role", "system", "content", message.content()));
         case USER -> messages.add(Map.of("role", "user", "content", message.content()));
         case ASSISTANT -> {
-          if (preserveToolProtocol && message.metadata().containsKey("toolCallId")) {
+          var toolCalls = toolCalls(message);
+          if (preserveToolProtocol && !toolCalls.isEmpty()) {
             var assistant = new LinkedHashMap<String, Object>();
             assistant.put("role", "assistant");
             assistant.put("content", message.content());
@@ -31,16 +32,16 @@ final class ProviderMessageMapper {
             if ("deepseek".equals(request.provider()) && !reasoning.isBlank()) {
               assistant.put("reasoning_content", reasoning);
             }
-            assistant.put("tool_calls", List.of(Map.of(
-                "id", message.metadata().get("toolCallId"),
+            assistant.put("tool_calls", toolCalls.stream().map(call -> Map.of(
+                "id", call.get("id"),
                 "type", "function",
                 "function", Map.of(
-                    "name", message.metadata().get("toolName"),
-                    "arguments", JsonSupport.toJson(message.metadata().getOrDefault("toolArguments", Map.of()))))));
+                    "name", call.get("name"),
+                    "arguments", JsonSupport.toJson(call.getOrDefault("arguments", Map.of()))))).toList());
             messages.add(assistant);
-          } else if (message.metadata().containsKey("toolCallId")) {
+          } else if (!toolCalls.isEmpty()) {
             var content = message.content().isBlank()
-                ? "Called tool " + JsonSupport.string(message.metadata().get("toolName")) + "."
+                ? "Called tools: " + toolCalls.stream().map(call -> JsonSupport.string(call.get("name"))).toList() + "."
                 : message.content();
             messages.add(Map.of("role", "assistant", "content", content));
           } else if (!message.content().isBlank()) {
@@ -72,27 +73,35 @@ final class ProviderMessageMapper {
   }
 
   private static int trailingToolProtocolStart(List<Message> messages) {
-    var start = messages.size();
-    var index = messages.size() - 1;
-    while (index > 0 && messages.get(index).role() == Message.Role.TOOL) {
-      var tool = messages.get(index);
-      var assistant = messages.get(index - 1);
-      if (!isMatchingAssistantToolCall(assistant, tool)) {
+    var lastUser = -1;
+    for (var i = messages.size() - 1; i >= 0; i--) {
+      if (messages.get(i).role() == Message.Role.USER) {
+        lastUser = i;
         break;
       }
-      start = index - 1;
-      index -= 2;
     }
-    return start;
-  }
-
-  private static boolean isMatchingAssistantToolCall(Message assistant, Message tool) {
-    if (assistant.role() != Message.Role.ASSISTANT || !assistant.metadata().containsKey("toolCallId")) {
-      return false;
+    for (var i = lastUser + 1; i < messages.size(); i++) {
+      var message = messages.get(i);
+      if (message.role() != Message.Role.ASSISTANT) {
+        continue;
+      }
+      var callIds = new java.util.HashSet<String>();
+      toolCalls(message).forEach(call -> callIds.add(JsonSupport.string(call.get("id"))));
+      if (callIds.isEmpty()) {
+        continue;
+      }
+      for (var j = i + 1; j < messages.size(); j++) {
+        var candidate = messages.get(j);
+        if (candidate.role() == Message.Role.USER) {
+          return messages.size();
+        }
+        if (candidate.role() == Message.Role.TOOL) {
+          callIds.remove(JsonSupport.string(candidate.metadata().get("toolCallId")));
+        }
+      }
+      return callIds.isEmpty() ? i : messages.size();
     }
-    var assistantCall = JsonSupport.string(assistant.metadata().get("toolCallId"));
-    var toolCall = JsonSupport.string(tool.metadata().get("toolCallId"));
-    return !assistantCall.isBlank() && assistantCall.equals(toolCall);
+    return messages.size();
   }
 
   static List<Map<String, Object>> anthropicMessages(ProviderRequest request) {
@@ -101,14 +110,20 @@ final class ProviderMessageMapper {
       switch (message.role()) {
         case USER -> messages.add(Map.of("role", "user", "content", message.content()));
         case ASSISTANT -> {
-          if (message.metadata().containsKey("toolCallId")) {
+          var toolCalls = toolCalls(message);
+          if (!toolCalls.isEmpty()) {
+            var content = new ArrayList<Map<String, Object>>();
+            if (!message.content().isBlank()) {
+              content.add(Map.of("type", "text", "text", message.content()));
+            }
+            content.addAll(toolCalls.stream().map(call -> Map.<String, Object>of(
+                "type", "tool_use",
+                "id", call.get("id"),
+                "name", call.get("name"),
+                "input", call.getOrDefault("arguments", Map.of()))).toList());
             messages.add(Map.of(
                 "role", "assistant",
-                "content", List.of(Map.of(
-                    "type", "tool_use",
-                    "id", message.metadata().get("toolCallId"),
-                    "name", message.metadata().get("toolName"),
-                    "input", message.metadata().getOrDefault("toolArguments", Map.of())))));
+                "content", content));
           } else if (!message.content().isBlank()) {
             messages.add(Map.of("role", "assistant", "content", message.content()));
           }
@@ -134,6 +149,13 @@ final class ProviderMessageMapper {
         case SYSTEM -> input.add(Map.of("role", "system", "content", message.content()));
         case USER -> input.add(Map.of("role", "user", "content", message.content()));
         case ASSISTANT -> {
+          for (var call : toolCalls(message)) {
+            input.add(Map.of(
+                "type", "function_call",
+                "call_id", call.get("id"),
+                "name", call.get("name"),
+                "arguments", JsonSupport.toJson(call.getOrDefault("arguments", Map.of()))));
+          }
           if (!message.content().isBlank()) {
             input.add(Map.of("role", "assistant", "content", message.content()));
           }
@@ -145,6 +167,34 @@ final class ProviderMessageMapper {
       }
     }
     return input;
+  }
+
+  private static List<Map<String, Object>> toolCalls(Message message) {
+    var batch = message.metadata().get("toolCalls");
+    if (batch instanceof List<?> list) {
+      var calls = new ArrayList<Map<String, Object>>();
+      for (var value : list) {
+        if (value instanceof Map<?, ?> raw) {
+          var id = raw.get("id");
+          var name = raw.get("name");
+          if (id != null && name != null) {
+            var call = new LinkedHashMap<String, Object>();
+            call.put("id", id);
+            call.put("name", name);
+            call.put("arguments", raw.get("arguments") instanceof Map<?, ?> arguments ? arguments : Map.of());
+            calls.add(call);
+          }
+        }
+      }
+      return calls;
+    }
+    if (message.metadata().containsKey("toolCallId")) {
+      return List.of(Map.of(
+          "id", message.metadata().get("toolCallId"),
+          "name", message.metadata().get("toolName"),
+          "arguments", message.metadata().getOrDefault("toolArguments", Map.of())));
+    }
+    return List.of();
   }
 
   static List<Map<String, Object>> openAiTools(List<ToolDefinition> definitions) {

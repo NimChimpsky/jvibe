@@ -69,9 +69,14 @@ public final class OutputPanel extends JPanel {
     var row = new JPanel(new BorderLayout(8, 0));
     row.setBorder(new EmptyBorder(4, 6, 4, 2));
     row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
-    var link = new JButton("<html><u>" + path.getFileName() + "</u></html>");
+    var link = new JButton(path.getFileName().toString());
     link.setToolTipText(path.toString());
     link.setBorder(BorderFactory.createEmptyBorder());
+    var linkColour = UIManager.getColor("Component.linkColor");
+    if (linkColour != null) {
+      link.setForeground(linkColour);
+    }
+    link.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
     link.setHorizontalAlignment(JButton.LEFT);
     link.addActionListener(event -> open(path));
     var delete = new JButton(new BinIcon());

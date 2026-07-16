@@ -3,10 +3,12 @@ package com.jvibe.session;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.jvibe.config.JvibePaths;
+import com.jvibe.git.GitService;
 import com.jvibe.provider.ProviderConfigService;
 import com.jvibe.tool.ToolRegistryFactory;
 import com.jvibe.tool.builtin.BuiltinToolSet;
 import com.jvibe.tool.dynamic.DynamicToolRegistry;
+import com.jvibe.tool.dynamic.DynamicToolManagementTools;
 import com.jvibe.tool.dynamic.ToolBuildService;
 import com.jvibe.workspace.Workspace;
 import java.util.List;
@@ -35,9 +37,12 @@ class SessionFactoryTest {
   }
 
   private SessionFactory factory() {
+    var paths = JvibePaths.under(home);
+    var dynamicTools = new DynamicToolRegistry(paths, new ToolBuildService(), new GitService());
     var toolFactory = new ToolRegistryFactory(
         new BuiltinToolSet(List.of()),
-        new DynamicToolRegistry(home.resolve("tools"), new ToolBuildService()));
-    return new SessionFactory(toolFactory, new ProviderConfigService(JvibePaths.under(home)));
+        dynamicTools,
+        new DynamicToolManagementTools(paths, dynamicTools));
+    return new SessionFactory(toolFactory, new ProviderConfigService(paths));
   }
 }

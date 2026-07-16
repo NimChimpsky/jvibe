@@ -33,6 +33,22 @@ public record ToolManifest(
     return manifest;
   }
 
+  public String toJson() {
+    return Jsonb.instance().toJsonPretty(this);
+  }
+
+  public ToolManifest withEnabled(boolean value) {
+    return new ToolManifest(
+        id, name, description, version, pluginApiVersion, entryClass, inputSchema,
+        permissions, dependencies, value, approved);
+  }
+
+  public ToolManifest withApproved(boolean value) {
+    return new ToolManifest(
+        id, name, description, version, pluginApiVersion, entryClass, inputSchema,
+        permissions, dependencies, enabled, value);
+  }
+
   private void validate() {
     require(id, "id");
     require(name, "name");

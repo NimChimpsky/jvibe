@@ -9,12 +9,15 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 
-final class GatewayServer {
+final class GatewayServer implements AutoCloseable {
+  private static final int MAX_PROMPT_BYTES = 1024 * 1024;
   private final AgentRunner runner;
   private final SessionFactory sessionFactory;
   private final String host;
   private final int port;
   private final Path workspace;
+  private HttpServer server;
+  private java.util.concurrent.ExecutorService executor;
 
   GatewayServer(AgentRunner runner, SessionFactory sessionFactory, String host, int port, Path workspace) {
     this.runner = runner;
@@ -24,9 +27,19 @@ final class GatewayServer {
     this.workspace = workspace;
   }
 
-  HttpServer start() throws IOException {
-    var server = HttpServer.create(new InetSocketAddress(host, port), 0);
+  synchronized GatewayServer start() throws IOException {
+    if (server != null) {
+      return this;
+    }
+    server = HttpServer.create(new InetSocketAddress(host, port), 0);
+    executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
+    server.setExecutor(executor);
     server.createContext("/health", exchange -> {
+      if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+        exchange.sendResponseHeaders(405, -1);
+        exchange.close();
+        return;
+      }
       var response = "ok\n".getBytes(StandardCharsets.UTF_8);
       exchange.sendResponseHeaders(200, response.length);
       exchange.getResponseBody().write(response);
@@ -38,26 +51,70 @@ final class GatewayServer {
         exchange.close();
         return;
       }
-      var prompt = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+      var body = exchange.getRequestBody().readNBytes(MAX_PROMPT_BYTES + 1);
+      if (body.length > MAX_PROMPT_BYTES) {
+        exchange.sendResponseHeaders(413, -1);
+        exchange.close();
+        return;
+      }
+      var prompt = new String(body, StandardCharsets.UTF_8).trim();
+      if (prompt.isBlank()) {
+        exchange.sendResponseHeaders(400, -1);
+        exchange.close();
+        return;
+      }
       exchange.getResponseHeaders().add("Content-Type", "text/plain; charset=utf-8");
       exchange.sendResponseHeaders(200, 0);
       var session = session();
       try (var out = exchange.getResponseBody()) {
-        runner.run(session, prompt).forEach(event -> {
-          try {
-            out.write((event.type() + " " + event.message() + "\n").getBytes(StandardCharsets.UTF_8));
-            out.flush();
-          } catch (IOException e) {
-            throw new RuntimeException(e);
-          }
-        });
+        try {
+          runner.run(session, prompt).forEach(event -> {
+            try {
+              out.write((event.type() + " " + event.message() + "\n").getBytes(StandardCharsets.UTF_8));
+              out.flush();
+            } catch (IOException e) {
+              throw new ResponseWriteException(e);
+            }
+          });
+        } catch (ResponseWriteException ignored) {
+          // The caller disconnected while a response was streaming.
+        }
       }
     });
     server.start();
-    return server;
+    return this;
+  }
+
+  InetSocketAddress getAddress() {
+    if (server == null) {
+      throw new IllegalStateException("Gateway has not started");
+    }
+    return server.getAddress();
+  }
+
+  synchronized void stop(int delaySeconds) {
+    if (server != null) {
+      server.stop(delaySeconds);
+      server = null;
+    }
+    if (executor != null) {
+      executor.shutdownNow();
+      executor = null;
+    }
+  }
+
+  @Override
+  public void close() {
+    stop(0);
   }
 
   private AgentSession session() {
     return sessionFactory.create(workspace);
+  }
+
+  private static final class ResponseWriteException extends RuntimeException {
+    private ResponseWriteException(IOException cause) {
+      super(cause);
+    }
   }
 }

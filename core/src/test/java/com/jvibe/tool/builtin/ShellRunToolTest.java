@@ -63,6 +63,18 @@ class ShellRunToolTest {
     }
   }
 
+  @Test
+  void drainsLargeOutputWithoutBlockingAndCapsPayload() throws Exception {
+    org.junit.jupiter.api.Assumptions.assumeFalse(
+        System.getProperty("os.name", "").toLowerCase().contains("win"));
+    var result = ShellRunTool.execute(
+        call("head -c 5000000 /dev/zero | tr '\\0' x"),
+        new ToolExecutionContext(new Workspace(temp), Duration.ofSeconds(10), new AtomicBoolean(false)));
+
+    assertTrue(result.success());
+    assertTrue(result.payload().get("stdout").toString().endsWith("[output truncated at 4 MiB]"));
+  }
+
   private static ToolCall call(String command) {
     return new ToolCall("call_1", "shell_run", Map.of("command", command));
   }

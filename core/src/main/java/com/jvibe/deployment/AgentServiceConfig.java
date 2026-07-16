@@ -4,6 +4,7 @@ public record AgentServiceConfig(
     String jarPath,
     String workspace,
     String profile,
+    boolean gatewayEnabled,
     String gatewayHost,
     int gatewayPort) {
   public String daemonCommand() {

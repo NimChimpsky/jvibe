@@ -85,7 +85,9 @@ public final class AgentRunner {
     try {
       return session.mode() == AgentSession.Mode.CHAT
           ? configService.chatPrompt()
-          : configService.workspacePrompt();
+          : session.mode() == AgentSession.Mode.REMOTE_SSH
+              ? configService.remoteSshPrompt()
+              : configService.workspacePrompt();
     } catch (java.io.IOException e) {
       return fallbackSystemPrompt;
     }
@@ -108,6 +110,7 @@ public final class AgentRunner {
     private Iterator<ProviderEvent> providerEvents;
     private final StringBuilder assistant = new StringBuilder();
     private final StringBuilder reasoning = new StringBuilder();
+    private final ArrayList<com.jvibe.tool.ToolCall> pendingToolCalls = new ArrayList<>();
     private int iterations;
     private boolean complete;
 
@@ -147,6 +150,10 @@ public final class AgentRunner {
           }
         }
         if (!providerEvents.hasNext()) {
+          if (!pendingToolCalls.isEmpty()) {
+            executePendingTools();
+            continue;
+          }
           finishAssistantMessage();
           complete = true;
           events.add(new AgentEvent(AgentEvent.Type.DONE, "done"));
@@ -159,30 +166,12 @@ public final class AgentRunner {
             events.add(new AgentEvent(AgentEvent.Type.ASSISTANT_DELTA, delta.text()));
           }
           case ProviderEvent.ReasoningDelta delta -> reasoning.append(delta.text());
-          case ProviderEvent.ToolCallRequested toolCall -> {
-            if (iterations >= currentMaxToolIterations()) {
-              complete = true;
-              events.add(AgentEvent.error("Max tool iterations exceeded"));
-              return;
-            }
-            iterations++;
-            var metadata = new java.util.LinkedHashMap<String, Object>();
-            metadata.put("toolCallId", toolCall.call().id());
-            metadata.put("toolName", toolCall.call().name());
-            metadata.put("toolArguments", toolCall.call().arguments());
-            if (!reasoning.isEmpty()) {
-              metadata.put("reasoningContent", reasoning.toString());
-              reasoning.setLength(0);
-            }
-            session.conversation().add(new Message(Message.Role.ASSISTANT, assistant.toString(), metadata, java.time.Instant.now()));
-            assistant.setLength(0);
-            events.add(new AgentEvent(AgentEvent.Type.TOOL_STARTED, toolCall.call().name()));
-            var result = session.toolRegistry().execute(toolCall.call(), ToolExecutionContext.defaults(session.workspace()));
-            session.conversation().add(new Message(Message.Role.TOOL, result.summary(), Map.of("toolCallId", result.callId()), java.time.Instant.now()));
-            events.add(new AgentEvent(AgentEvent.Type.TOOL_FINISHED, result.summary(), Map.of("success", result.success(), "payload", result.payload()), java.time.Instant.now()));
-            providerEvents = null;
-          }
+          case ProviderEvent.ToolCallRequested toolCall -> pendingToolCalls.add(toolCall.call());
           case ProviderEvent.Done ignored -> {
+            if (!pendingToolCalls.isEmpty()) {
+              executePendingTools();
+              continue;
+            }
             finishAssistantMessage();
             complete = true;
             events.add(new AgentEvent(AgentEvent.Type.DONE, "done"));
@@ -195,6 +184,47 @@ public final class AgentRunner {
           }
         }
       }
+    }
+
+    private void executePendingTools() {
+      var metadata = new java.util.LinkedHashMap<String, Object>();
+      metadata.put("toolCalls", pendingToolCalls.stream().map(call -> Map.<String, Object>of(
+          "id", call.id(),
+          "name", call.name(),
+          "arguments", call.arguments())).toList());
+      if (!reasoning.isEmpty()) {
+        metadata.put("reasoningContent", reasoning.toString());
+        reasoning.setLength(0);
+      }
+      session.conversation().add(new Message(
+          Message.Role.ASSISTANT,
+          assistant.toString(),
+          metadata,
+          java.time.Instant.now()));
+      assistant.setLength(0);
+
+      for (var call : pendingToolCalls) {
+        if (iterations >= currentMaxToolIterations()) {
+          complete = true;
+          events.add(AgentEvent.error("Max tool iterations exceeded"));
+          break;
+        }
+        iterations++;
+        events.add(new AgentEvent(AgentEvent.Type.TOOL_STARTED, call.name()));
+        var result = session.toolRegistry().execute(call, ToolExecutionContext.defaults(session.workspace()));
+        session.conversation().add(new Message(
+            Message.Role.TOOL,
+            ModelToolResult.encode(result),
+            Map.of("toolCallId", result.callId()),
+            java.time.Instant.now()));
+        events.add(new AgentEvent(
+            AgentEvent.Type.TOOL_FINISHED,
+            result.summary(),
+            Map.of("success", result.success(), "payload", result.payload()),
+            java.time.Instant.now()));
+      }
+      pendingToolCalls.clear();
+      providerEvents = null;
     }
 
     private void finishAssistantMessage() {

@@ -19,6 +19,7 @@ class ConfigServiceTest {
     assertTrue(Files.exists(paths.providers()));
     assertTrue(Files.exists(paths.chatPrompt()));
     assertTrue(Files.exists(paths.workspacePrompt()));
+    assertTrue(Files.exists(paths.remoteSshPrompt()));
     assertTrue(Files.isDirectory(paths.sessions()));
     assertTrue(Files.isDirectory(paths.tools()));
     assertTrue(Files.isDirectory(paths.logs()));
@@ -28,24 +29,28 @@ class ConfigServiceTest {
   @Test
   void savesAndLoadsGeneralConfig() throws Exception {
     var service = new ConfigService(JvibePaths.under(home));
-    var config = new JvibeConfig("openai", "gpt-test", 4, "DRACULA", "supervised", false, "127.0.0.1", 8737, java.util.List.of());
+    var config = new JvibeConfig(
+        "openai", "gpt-test", 4, "DRACULA", false, "127.0.0.1", 8737,
+        java.util.List.of(), java.util.List.of(), true, "0.0.0.0", 8738,
+        java.util.List.of(), java.util.List.of(), java.util.List.of());
 
     service.saveConfig(config);
 
     var saved = service.config();
     assertEquals("DRACULA", saved.theme());
     assertEquals(4, saved.maxToolIterations());
+    assertEquals(java.util.List.of("desktop", "remote-ssh", "agent-orchestrator", "jfr", "stacktrace"), saved.mainTabOrder());
+    assertEquals(8738, saved.monitoringPort());
   }
 
   @Test
-  void savesAndLoadsAutonomousConfig() throws Exception {
+  void savesAndLoadsGatewayConfig() throws Exception {
     var service = new ConfigService(JvibePaths.under(home));
     var config = new JvibeConfig(
         "openai",
         "gpt-test",
         4,
         "DRACULA",
-        "autonomous",
         true,
         "0.0.0.0",
         9999,
@@ -54,15 +59,20 @@ class ConfigServiceTest {
             new com.jvibe.deployment.DeploymentTarget("ssh", "example.com", "deploy", "/opt/jvibe", "/srv/app"),
             "openai",
             "gpt",
-            "autonomous",
             true,
             "127.0.0.1",
-            8737)));
+            8737)),
+        java.util.List.of(),
+        true,
+        "0.0.0.0",
+        8738,
+        java.util.List.of(),
+        java.util.List.of(),
+        java.util.List.of());
 
     service.saveConfig(config);
 
     var saved = service.config();
-    assertEquals("autonomous", saved.autonomyMode());
     assertEquals(true, saved.gatewayEnabled());
     assertEquals(9999, saved.gatewayPort());
     assertEquals("prod", saved.deploymentProfiles().getFirst().name());
@@ -82,6 +92,7 @@ class ConfigServiceTest {
     assertTrue(service.chatPrompt().contains("relative output path"));
     assertTrue(service.workspacePrompt().contains("workspace root"));
     assertTrue(service.workspacePrompt().contains("create summary.md"));
+    assertTrue(service.remoteSshPrompt().contains("Remote SSH mode"));
   }
 
   @Test
@@ -101,7 +112,7 @@ class ConfigServiceTest {
         {"defaultProvider":"openai","defaultModel":"gpt","maxToolIterations":5}
         """);
 
-    assertEquals("FLATLAF_DARK", config.theme());
+    assertEquals("DRACULA", config.theme());
   }
 
   @Test
@@ -118,5 +129,35 @@ class ConfigServiceTest {
     assertTrue(!rewritten.contains("requireApproval"), rewritten);
     assertTrue(!rewritten.contains("allowedHighRiskTools"), rewritten);
     assertEquals("ONE_DARK", JvibeConfig.fromJson(rewritten).theme());
+  }
+
+  @Test
+  void savesAndLoadsMonitoringConfig() throws Exception {
+    var service = new ConfigService(JvibePaths.under(home));
+    var monitored = new com.jvibe.monitor.MonitoredService("svc", "Service", "http://service", "10.0.0.4", "now", "ok", null);
+    var config = new JvibeConfig(
+        "jvibe",
+        "jvibe-coder",
+        10,
+        "DRACULA",
+        false,
+        "127.0.0.1",
+        8737,
+        java.util.List.of(),
+        java.util.List.of("jfr", "desktop"),
+        true,
+        "0.0.0.0",
+        9000,
+        java.util.List.of(monitored),
+        java.util.List.of(),
+        java.util.List.of());
+
+    service.saveConfig(config);
+
+    var saved = service.config();
+    assertEquals(java.util.List.of("jfr", "desktop"), saved.mainTabOrder());
+    assertEquals("0.0.0.0", saved.monitoringHost());
+    assertEquals(9000, saved.monitoringPort());
+    assertEquals("svc", saved.monitoredServices().getFirst().id());
   }
 }

@@ -5,6 +5,7 @@ import com.jvibe.provider.ProviderConfigService;
 import com.jvibe.provider.ProviderDefinition;
 import com.jvibe.provider.ProviderRegistry;
 import com.jvibe.provider.ProviderSettings;
+import io.avaje.inject.External;
 import jakarta.inject.Singleton;
 import java.util.List;
 
@@ -13,15 +14,15 @@ public final class ProviderSettingsController {
   private final ProviderConfigService configService;
   private final ProviderRegistry registry;
 
-  public ProviderSettingsController(ProviderConfigService configService, ProviderRegistry registry) {
+  public ProviderSettingsController(
+      @External ProviderConfigService configService,
+      @External ProviderRegistry registry) {
     this.configService = configService;
     this.registry = registry;
   }
 
   public List<ProviderDefinition> configurableProviders() {
-    return configService.definitions().stream()
-        .filter(definition -> !"local".equals(definition.id()))
-        .toList();
+    return configService.definitions();
   }
 
   public ProviderSettings settings(String provider) {

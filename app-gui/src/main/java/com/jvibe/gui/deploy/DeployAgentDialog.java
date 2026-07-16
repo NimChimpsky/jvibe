@@ -59,6 +59,8 @@ public final class DeployAgentDialog {
     var type = new JComboBox<>(new String[] {"local", "ssh"});
     var host = new JTextField();
     var user = new JTextField(System.getProperty("user.name", ""));
+    var port = new JTextField("22");
+    var key = new JTextField(System.getProperty("user.home", "") + "/.ssh/id_ed25519");
     var path = new JTextField("~/.jvibe/agent");
     var workspaceField = new JTextField(workspace.toString());
     fields.add(label("Target"));
@@ -67,6 +69,10 @@ public final class DeployAgentDialog {
     fields.add(host);
     fields.add(label("User"));
     fields.add(user);
+    fields.add(label("Port"));
+    fields.add(port);
+    fields.add(label("Private key"));
+    fields.add(key);
     fields.add(label("Install path"));
     fields.add(path);
     fields.add(label("Workspace"));
@@ -77,50 +83,88 @@ public final class DeployAgentDialog {
     var cancel = new JButton("Cancel");
     cancel.addActionListener(event -> dialog.dispose());
     var deploy = new JButton("Deploy");
-    deploy.addActionListener(event -> deploy(dialog, type, host, user, path, workspaceField));
+    deploy.addActionListener(event -> deploy(dialog, deploy, type, host, user, port, key, path, workspaceField));
     actions.add(cancel);
     actions.add(deploy);
     body.add(actions, BorderLayout.SOUTH);
 
     dialog.setContentPane(body);
-    dialog.setSize(new Dimension(620, 320));
-    dialog.setMinimumSize(new Dimension(520, 280));
+    dialog.setSize(new Dimension(660, 400));
+    dialog.setMinimumSize(new Dimension(560, 360));
     dialog.setLocationRelativeTo(owner);
     dialog.setVisible(true);
   }
 
   private void deploy(
       JDialog dialog,
+      JButton deploy,
       JComboBox<String> type,
       JTextField host,
       JTextField user,
+      JTextField port,
+      JTextField key,
       JTextField path,
       JTextField workspaceField) {
+    final int sshPort;
+    try {
+      sshPort = Integer.parseInt(port.getText().trim());
+    } catch (NumberFormatException e) {
+      JOptionPane.showMessageDialog(dialog, "Port must be a number.", "Deploy Agent", JOptionPane.ERROR_MESSAGE);
+      return;
+    }
     var target = new DeploymentTarget(
         type.getSelectedItem().toString(),
         host.getText(),
         user.getText(),
         path.getText(),
-        workspaceField.getText());
+        workspaceField.getText(),
+        sshPort,
+        key.getText());
     var profile = new DeploymentProfile(
         "gui",
         target,
         provider,
         model,
-        "autonomous",
         true,
         "127.0.0.1",
         8737);
-    var cliJar = Path.of("app-cli/build/libs/jvibe-cli-0.1.0-SNAPSHOT.jar").toAbsolutePath().normalize();
-    var result = "local".equals(target.type())
-        ? deploymentService.deployLocal(profile, cliJar)
-        : deploymentService.plan(profile, cliJar);
-    log.accept(result.summary());
-    JOptionPane.showMessageDialog(
-        dialog,
-        result.summary() + "\n\n" + String.join("\n", result.commands()),
-        "Deploy Agent",
-        result.success() ? JOptionPane.INFORMATION_MESSAGE : JOptionPane.ERROR_MESSAGE);
+    final Path cliJar;
+    try {
+      cliJar = CliArtifactLocator.locate();
+    } catch (IllegalStateException e) {
+      JOptionPane.showMessageDialog(dialog, e.getMessage(), "Deploy Agent", JOptionPane.ERROR_MESSAGE);
+      return;
+    }
+    deploy.setEnabled(false);
+    deploy.setText("Deploying...");
+    new javax.swing.SwingWorker<com.jvibe.deployment.DeploymentResult, Void>() {
+      @Override
+      protected com.jvibe.deployment.DeploymentResult doInBackground() {
+        return "local".equals(target.type())
+            ? deploymentService.deployLocal(profile, cliJar)
+            : deploymentService.deploySsh(profile, cliJar);
+      }
+
+      @Override
+      protected void done() {
+        deploy.setEnabled(true);
+        deploy.setText("Deploy");
+        try {
+          var result = get();
+          log.accept(result.summary());
+          JOptionPane.showMessageDialog(
+              dialog,
+              result.summary() + "\n\n" + String.join("\n", result.commands()),
+              "Deploy Agent",
+              result.success() ? JOptionPane.INFORMATION_MESSAGE : JOptionPane.ERROR_MESSAGE);
+          if (result.success()) {
+            dialog.dispose();
+          }
+        } catch (Exception e) {
+          JOptionPane.showMessageDialog(dialog, e.getMessage(), "Deploy Agent", JOptionPane.ERROR_MESSAGE);
+        }
+      }
+    }.execute();
   }
 
   private static JLabel label(String text) {

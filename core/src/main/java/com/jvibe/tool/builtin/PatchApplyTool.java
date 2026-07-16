@@ -91,7 +91,9 @@ public final class PatchApplyTool {
     if (path.startsWith("a/") || path.startsWith("b/")) {
       path = path.substring(2);
     }
-    if (path.startsWith("/") || path.contains("..")) {
+    var parsed = Path.of(path);
+    if (parsed.isAbsolute() || java.util.stream.StreamSupport.stream(parsed.spliterator(), false)
+        .anyMatch(part -> "..".equals(part.toString()))) {
       throw new IllegalArgumentException("Patch path escapes workspace: " + path);
     }
     return path;

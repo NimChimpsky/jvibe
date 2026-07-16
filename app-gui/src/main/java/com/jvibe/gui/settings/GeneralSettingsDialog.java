@@ -3,10 +3,13 @@ package com.jvibe.gui.settings;
 import com.jvibe.config.ConfigService;
 import com.jvibe.config.JvibeConfig;
 import java.awt.BorderLayout;
+import java.awt.Cursor;
+import java.awt.Desktop;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.event.KeyEvent;
 import java.io.IOException;
+import java.net.URI;
 import java.util.function.Consumer;
 import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
@@ -67,6 +70,8 @@ public final class GeneralSettingsDialog {
     body.add(scroll(chatPromptArea));
     body.add(title("Built-in Workspace system prompt"));
     body.add(scroll(workspacePromptArea));
+    body.add(title("About JVibe"));
+    body.add(aboutLinks());
 
     var cancel = new JButton("Cancel");
     cancel.addActionListener(event -> dialog.dispose());
@@ -74,16 +79,8 @@ public final class GeneralSettingsDialog {
     var save = new JButton("Save");
     save.addActionListener(event -> {
       try {
-        configService.saveConfig(new JvibeConfig(
-            config.defaultProvider(),
-            config.defaultModel(),
-            ((Number) maxToolIterations.getValue()).intValue(),
-            config.theme(),
-            config.autonomyMode(),
-            config.gatewayEnabled(),
-            config.gatewayHost(),
-            config.gatewayPort(),
-            config.deploymentProfiles()));
+        configService.updateConfig(existing ->
+            existing.withMaxToolIterations(((Number) maxToolIterations.getValue()).intValue()));
         log.accept("Saved general settings");
         dialog.dispose();
       } catch (IOException e) {
@@ -107,7 +104,7 @@ public final class GeneralSettingsDialog {
     prompt.setLineWrap(true);
     prompt.setWrapStyleWord(true);
     prompt.setEditable(false);
-    prompt.setEnabled(false);
+    prompt.setFocusable(true);
     return prompt;
   }
 
@@ -133,6 +130,36 @@ public final class GeneralSettingsDialog {
     var scroll = new JScrollPane(textArea);
     scroll.setBorder(BorderFactory.createEtchedBorder());
     return scroll;
+  }
+
+  private JComponent aboutLinks() {
+    var links = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 12, 0));
+    links.add(linkButton("Discord", "https://discord.gg/TN3nWFBf8H"));
+    links.add(linkButton("GitHub", "https://github.com/NimChimpsky/jvibe"));
+    links.add(linkButton("Site", "https://jvibe.net"));
+    return links;
+  }
+
+  private JButton linkButton(String label, String url) {
+    var button = new JButton(label);
+    button.setToolTipText(url);
+    button.setBorderPainted(false);
+    button.setContentAreaFilled(false);
+    button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+    button.addActionListener(event -> openExternal(url));
+    return button;
+  }
+
+  private void openExternal(String url) {
+    try {
+      if (!Desktop.isDesktopSupported()) {
+        log.accept("Desktop links are not supported on this system");
+        return;
+      }
+      Desktop.getDesktop().browse(URI.create(url));
+    } catch (IOException | RuntimeException e) {
+      JOptionPane.showMessageDialog(owner, e.getMessage(), "Unable to open link", JOptionPane.ERROR_MESSAGE);
+    }
   }
 
   private void bindEscape(JDialog dialog) {

@@ -3,6 +3,7 @@ package com.jvibe.gui.controller;
 import com.jvibe.agent.AgentRunner;
 import com.jvibe.events.AgentEvent;
 import com.jvibe.session.AgentSession;
+import io.avaje.inject.External;
 import jakarta.inject.Singleton;
 import java.util.stream.Stream;
 
@@ -10,7 +11,7 @@ import java.util.stream.Stream;
 public final class PromptController {
   private final AgentRunner runner;
 
-  public PromptController(AgentRunner runner) {
+  public PromptController(@External AgentRunner runner) {
     this.runner = runner;
   }
 

@@ -29,4 +29,12 @@ final class ToolSchemas {
   static Map<String, Object> bool(String description) {
     return Map.of("type", "boolean", "description", description);
   }
+
+  static Map<String, Object> integer(String description, int minimum, int maximum) {
+    return Map.of(
+        "type", "integer",
+        "description", description,
+        "minimum", minimum,
+        "maximum", maximum);
+  }
 }

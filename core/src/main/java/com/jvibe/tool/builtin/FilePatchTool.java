@@ -5,6 +5,7 @@ import com.jvibe.tool.ToolCall;
 import com.jvibe.tool.ToolDefinition;
 import com.jvibe.tool.ToolExecutionContext;
 import com.jvibe.tool.ToolResult;
+import com.jvibe.config.AtomicFiles;
 import java.nio.file.Files;
 import java.util.Map;
 
@@ -33,7 +34,7 @@ public final class FilePatchTool {
       return ToolResult.failure(call.id(), "Search text not found in " + path.getFileName());
     }
     var updated = content.replace(search, replacement);
-    Files.writeString(path, updated);
+    AtomicFiles.writeString(path, updated);
     return ToolResult.success(call.id(), Map.of("path", path.toString()), "Patched " + path.getFileName());
   }
 }

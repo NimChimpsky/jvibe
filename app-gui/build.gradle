@@ -5,6 +5,8 @@ plugins {
 dependencies {
   implementation project(':core')
   implementation "io.avaje:avaje-inject:${avajeInjectVersion}"
+  implementation "io.avaje:avaje-jsonb:${avajeJsonbVersion}"
+  implementation "jakarta.annotation:jakarta.annotation-api:${jakartaAnnotationVersion}"
   implementation 'com.formdev:flatlaf:3.7.1'
   implementation 'com.formdev:flatlaf-intellij-themes:3.7.1'
   implementation 'org.jetbrains.jediterm:jediterm-core:3.66'
@@ -23,6 +25,32 @@ configurations.configureEach {
 application {
   applicationName = 'jvibe'
   mainClass = 'com.jvibe.gui.JvibeGui'
+  applicationDefaultJvmArgs = ['-Dapple.awt.application.name=JVibe']
+}
+
+def agentCliJar = project(':app-cli').tasks.named('jar')
+
+distributions {
+  main {
+    contents {
+      from(agentCliJar) {
+        into 'agent'
+        rename { 'jvibe-cli.jar' }
+      }
+    }
+  }
+}
+
+tasks.named('installDist') {
+  dependsOn agentCliJar
+}
+
+tasks.named('distZip') {
+  dependsOn agentCliJar
+}
+
+tasks.named('distTar') {
+  dependsOn agentCliJar
 }
 
 tasks.named('jar') {

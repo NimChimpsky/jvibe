@@ -33,7 +33,7 @@ class ProviderConfigServiceTest {
     var config = service.load();
 
     assertFalse(config.providers().isEmpty());
-    assertEquals(List.of("local", "jvibe", "openai", "anthropic", "mistral", "deepseek", "qwen"),
+    assertEquals(List.of("jvibe", "openai", "anthropic", "mistral", "deepseek", "qwen"),
         config.providers().stream().map(ProviderSettings::provider).toList());
     assertTrue(config.providers().stream().anyMatch(provider -> provider.provider().equals("deepseek")));
     assertTrue(config.providers().stream().anyMatch(provider -> provider.provider().equals("qwen")));

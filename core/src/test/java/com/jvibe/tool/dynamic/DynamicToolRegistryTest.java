@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.jvibe.tool.ToolCall;
 import com.jvibe.tool.ToolExecutionContext;
 import com.jvibe.tool.ToolRegistry;
+import com.jvibe.config.JvibePaths;
 import com.jvibe.workspace.Workspace;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -80,5 +81,32 @@ class DynamicToolRegistryTest {
         """));
 
     assertTrue(error.getMessage().contains("^[a-zA-Z0-9_-]+$"));
+  }
+
+  @Test
+  void createsRequiresApprovalAndHotLoadsToolInSameRegistry() throws Exception {
+    var paths = JvibePaths.under(temp.resolve("home"));
+    var workspace = new Workspace(temp.resolve("project"));
+    Files.createDirectories(workspace.root());
+    var registry = new ToolRegistry();
+    var dynamic = new DynamicToolRegistry(paths.tools(), new ToolBuildService());
+    var management = new DynamicToolManagementTools(paths, dynamic);
+    management.tools(workspace, registry).forEach(registry::register);
+    var context = ToolExecutionContext.defaults(workspace);
+
+    var created = registry.execute(
+        new ToolCall("create", "tool_create", Map.of("id", "generated_tool", "name", "Generated Tool")),
+        context);
+    var blocked = registry.execute(
+        new ToolCall("build", "tool_build", Map.of("id", "generated_tool")),
+        context);
+    var approved = management.approve("approve", workspace, registry, "generated_tool", "project");
+
+    assertTrue(created.success());
+    assertTrue(!blocked.success());
+    assertTrue(blocked.summary().contains("approval"));
+    assertTrue(approved.success(), approved.summary());
+    assertTrue(registry.find("generated_tool").isPresent());
+    assertTrue(management.discovered(workspace).getFirst().loaded());
   }
 }

@@ -33,8 +33,7 @@ class BuiltinToolFactoryTest {
         "tool_build",
         "tool_reload",
         "tool_disable",
-        "tool_delete",
-        "tool_approve")));
+        "tool_delete")));
     assertTrue(ids.stream().allMatch(ToolDefinition::isValidId));
   }
 

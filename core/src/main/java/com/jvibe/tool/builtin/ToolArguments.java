@@ -28,4 +28,19 @@ final class ToolArguments {
     }
     return Boolean.parseBoolean(value.toString());
   }
+
+  static int integer(Map<String, Object> arguments, String key, int fallback) {
+    var value = arguments.get(key);
+    if (value == null) {
+      return fallback;
+    }
+    if (value instanceof Number number) {
+      return number.intValue();
+    }
+    try {
+      return Integer.parseInt(value.toString());
+    } catch (NumberFormatException e) {
+      throw new IllegalArgumentException("Argument must be an integer: " + key);
+    }
+  }
 }

@@ -1,6 +1,7 @@
 package com.jvibe.provider;
 
 import com.jvibe.config.JvibePaths;
+import com.jvibe.config.AtomicFiles;
 import com.jvibe.config.SecretRedactor;
 import io.avaje.jsonb.Jsonb;
 import java.io.IOException;
@@ -83,7 +84,7 @@ public final class ProviderConfigService {
         .filter(ProviderSettings::enabled)
         .findFirst()
         .map(ProviderSettings::provider)
-        .orElse("local");
+        .orElse("jvibe");
   }
 
   private ProvidersConfig mergeDefaults(ProvidersConfig config) {
@@ -112,10 +113,10 @@ public final class ProviderConfigService {
 
   private ProviderSettings defaultSettings(ProviderDefinition definition) {
     if (definition == null) {
-      return new ProviderSettings("local", "", "", "echo", "none", true);
+      throw new IllegalArgumentException("Unknown provider definition");
     }
     var thinking = definition.thinkingOptions().isEmpty() ? "none" : definition.thinkingOptions().getFirst().id();
-    return new ProviderSettings(definition.id(), definition.baseUrl(), "", definition.defaultModel(), thinking, "local".equals(definition.id()));
+    return new ProviderSettings(definition.id(), definition.baseUrl(), "", definition.defaultModel(), thinking, "jvibe".equals(definition.id()));
   }
 
   private void bootstrap() {
@@ -131,7 +132,7 @@ public final class ProviderConfigService {
 
   private void write(ProvidersConfig config) {
     try {
-      Files.writeString(paths.providers(), JSONB.toJsonPretty(config));
+      AtomicFiles.writeString(paths.providers(), JSONB.toJsonPretty(config));
       try {
         Files.setPosixFilePermissions(paths.providers(), Set.of(
             PosixFilePermission.OWNER_READ,
@@ -155,7 +156,6 @@ public final class ProviderConfigService {
         ThinkingOption.of("medium", "Medium"),
         ThinkingOption.of("high", "High"),
         ThinkingOption.of("xhigh", "Extra High"));
-    var basic = List.of(ThinkingOption.of("none", "None"));
     var highOnly = List.of(ThinkingOption.of("none", "None"), ThinkingOption.of("high", "High"));
     var deepSeek = List.of(
         ThinkingOption.of("disabled", "Thinking Off"),
@@ -171,7 +171,6 @@ public final class ProviderConfigService {
         ThinkingOption.of("high", "High"));
 
     var definitions = new LinkedHashMap<String, ProviderDefinition>();
-    definitions.put("local", new ProviderDefinition("local", "Local Echo", "", "", "echo", basic));
     definitions.put("jvibe", new ProviderDefinition("jvibe", "JVibe", JvibeProviderClient.BASE_URL, "JVIBE_API_KEY", "jvibe-coder", jvibeThinking));
     definitions.put("openai", new ProviderDefinition("openai", "OpenAI", "https://api.openai.com/v1", "OPENAI_API_KEY", "gpt-5.4", openAiThinking));
     definitions.put("anthropic", new ProviderDefinition("anthropic", "Anthropic", "https://api.anthropic.com/v1", "ANTHROPIC_API_KEY", "claude-sonnet-4-20250514", List.of(

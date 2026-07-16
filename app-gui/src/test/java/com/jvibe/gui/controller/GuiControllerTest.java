@@ -65,11 +65,11 @@ class GuiControllerTest {
     var provider = new StubProviderClient("openai", List.of(model("openai", "gpt-extra")));
     var controller = new ModelSelectionController(config, ProviderRegistry.of(provider));
 
-    assertEquals(List.of("openai/gpt-saved", "openai/gpt-extra"),
+    assertEquals(List.of("OpenAI/gpt-saved", "OpenAI/gpt-extra"),
         controller.choices().stream().map(ModelChoice::display).toList());
 
     var session = new com.jvibe.session.AgentSession(new Workspace(home), new ToolRegistry());
-    controller.apply(session, "openai/gpt-extra");
+    controller.apply(session, "OpenAI/gpt-extra");
 
     assertEquals("openai", session.provider());
     assertEquals("gpt-extra", session.model());
