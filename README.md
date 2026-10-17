@@ -5,7 +5,7 @@ repositories, plain-English server administration over SSH, and SQL over JDBC.
 
 ## Requirements
 
-**JDK 21+** on macOS, Linux or Windows.
+**JDK 17+** on macOS, Linux or Windows.
 
 ## Build and run
 
@@ -15,7 +15,7 @@ repositories, plain-English server administration over SSH, and SQL over JDBC.
 java -jar app-gui/build/libs/jvb.jar
 ```
 
-On Windows use `.\gradlew.bat`. `jvb.jar` is self-contained; copy it to any machine with JDK 21+.
+On Windows use `.\gradlew.bat`. `jvb.jar` is self-contained; copy it to any machine with JDK 17+.
 
 ## First start
 

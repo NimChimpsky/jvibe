@@ -85,13 +85,13 @@ class AgentRunnerTest {
 
     var events = runner(client, config).run(session(Mode.SERVERS), "uptime?").toList();
 
-    var request = client.requests.getFirst();
+    var request = client.requests.get(0);
     assertEquals(Mode.SERVERS, request.mode());
     assertEquals(Thinking.HIGH, request.thinking());
     assertEquals("Prefer journalctl.", request.instructions());
     assertEquals("ctx", request.context());
     assertEquals(List.of(Message.user("uptime?")), request.messages());
-    assertEquals(AgentEvent.Type.DONE, events.getLast().type());
+    assertEquals(AgentEvent.Type.DONE, last(events).type());
   }
 
   @Test
@@ -146,7 +146,7 @@ class AgentRunnerTest {
     assertEquals(List.of("sql_execute"), asked);
     assertEquals(1, reads.get());
     assertEquals(0, writes.get());
-    assertTrue(client.requests.get(1).messages().getLast().content().contains("declined"));
+    assertTrue(last(client.requests.get(1).messages()).content().contains("declined"));
   }
 
   @Test
@@ -162,7 +162,7 @@ class AgentRunnerTest {
     assertEquals(1, client.requests.size());
     assertEquals(List.of("1", "2", "3"), session.conversation().messages().stream()
         .filter(message -> message.role() == Message.Role.TOOL).map(Message::toolCallId).toList());
-    assertTrue(events.getLast().message().contains("Stopped after 1 tool calls"));
+    assertTrue(last(events).message().contains("Stopped after 1 tool calls"));
   }
 
   @Test
@@ -174,7 +174,7 @@ class AgentRunnerTest {
     var events = runner(client).run(session, "go").toList();
 
     assertEquals(0, executed.get());
-    assertEquals(AgentEvent.Type.ERROR, events.getLast().type());
+    assertEquals(AgentEvent.Type.ERROR, last(events).type());
     var messages = session.conversation().messages();
     assertEquals("partial", messages.get(1).content());
     assertEquals("a", messages.get(2).toolCallId());
@@ -186,7 +186,11 @@ class AgentRunnerTest {
 
     var events = runner(client).run(session(Mode.CHAT), "go").toList();
 
-    assertTrue(client.requests.get(1).messages().getLast().content().contains("Unknown tool: not_a_tool"));
-    assertEquals(AgentEvent.Type.DONE, events.getLast().type());
+    assertTrue(last(client.requests.get(1).messages()).content().contains("Unknown tool: not_a_tool"));
+    assertEquals(AgentEvent.Type.DONE, last(events).type());
+  }
+
+  private static <T> T last(List<T> list) {
+    return list.get(list.size() - 1);
   }
 }

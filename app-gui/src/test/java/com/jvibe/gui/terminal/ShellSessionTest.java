@@ -77,7 +77,7 @@ class ShellSessionTest {
   }
 
   private Thread reader(ShellSession session, StringBuilder output, CountDownLatch latch, String expected) {
-    return Thread.ofVirtual().unstarted(() -> {
+    var thread = new Thread(() -> {
       var buffer = new char[256];
       try {
         int count;
@@ -93,5 +93,7 @@ class ShellSessionTest {
         // Session close terminates the blocking read during tests.
       }
     });
+    thread.setDaemon(true);
+    return thread;
   }
 }

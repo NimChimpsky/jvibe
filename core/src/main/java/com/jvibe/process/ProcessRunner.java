@@ -19,6 +19,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class ProcessRunner {
   private static final int MAX_CAPTURE_BYTES = 4 * 1024 * 1024;
   private static final long POLL_MILLIS = 25;
+  /** Daemon threads for stdout, stderr and stdin, so a stuck pipe never blocks JVM exit. */
+  private static final java.util.concurrent.ThreadFactory STREAM_THREADS = task -> {
+    var thread = new Thread(task, "jvibe-process-io");
+    thread.setDaemon(true);
+    return thread;
+  };
 
   public ProcessResult run(List<String> command, Path directory, byte[] input,
       Duration timeout, AtomicBoolean cancelled) throws IOException, InterruptedException {
@@ -26,7 +32,7 @@ public final class ProcessRunner {
     if (cancelled.get()) return new ProcessResult(-1, "", "", ProcessResult.Status.CANCELLED);
     if (timeout.isNegative() || timeout.isZero()) return new ProcessResult(124, "", "", ProcessResult.Status.TIMED_OUT);
     var process = new ProcessBuilder(command).directory(directory.toFile()).start();
-    var executor = Executors.newVirtualThreadPerTaskExecutor();
+    var executor = Executors.newCachedThreadPool(STREAM_THREADS);
     var stdout = new Capture();
     var stderr = new Capture();
     var descendants = new LinkedHashSet<ProcessHandle>();

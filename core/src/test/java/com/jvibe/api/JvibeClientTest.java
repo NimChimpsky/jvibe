@@ -57,7 +57,7 @@ class JvibeClientTest {
     var messages = JsonSupport.list(body.get("messages"));
     assertEquals(List.of("user", "assistant", "tool"),
         messages.stream().map(message -> JsonSupport.map(message).get("role")).toList());
-    var call = JsonSupport.map(JsonSupport.list(JsonSupport.map(messages.get(1)).get("tool_calls")).getFirst());
+    var call = JsonSupport.map(JsonSupport.list(JsonSupport.map(messages.get(1)).get("tool_calls")).get(0));
     assertEquals("{\"path\":\"a\"}", JsonSupport.map(call.get("function")).get("arguments"));
     assertEquals("call_1", JsonSupport.map(messages.get(2)).get("tool_call_id"));
     assertEquals(List.of(new StreamEvent.AssistantDelta("done"), new StreamEvent.Done()), events);
@@ -70,7 +70,7 @@ class JvibeClientTest {
     accounts.save(new Account("", "jvibe_key", ""));
     http.streamStatusCode = 402;
     http.streamLines = List.of("{\"error\":{\"message\":\"Insufficient credits.\"}}");
-    var error = assertInstanceOf(StreamEvent.Error.class, client.stream(request()).toList().getFirst());
+    var error = assertInstanceOf(StreamEvent.Error.class, client.stream(request()).toList().get(0));
     assertTrue(error.message().contains("Out of JVibe credits"));
 
     http.streamStatusCode = 403;

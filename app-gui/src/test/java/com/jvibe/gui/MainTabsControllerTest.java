@@ -35,7 +35,7 @@ class MainTabsControllerTest {
     tabs.beginDrag(1);
     tabs.moveDraggedTabTo(0);
     tabs.finishDrag();
-    assertEquals("build", config.config().mainTabOrder().getFirst());
+    assertEquals("build", config.config().mainTabOrder().get(0));
     var reopened = controller.create(definitions());
     assertEquals(0, reopened.getSelectedIndex());
     assertEquals("Build", reopened.getTitleAt(0));

@@ -53,7 +53,8 @@ class AgentCancellationTest {
         new StreamEvent.ToolCallRequested(new ToolCall("two", "slow", Map.of())),
         new StreamEvent.Done()), JvibeConfig::defaults);
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    var executor = Executors.newCachedThreadPool();
+    try {
       var task = executor.submit(() -> {
         try (var events = runner.run(session, "inspect", control, ToolApprover.ALWAYS)) {
           return events.toList();
@@ -63,6 +64,8 @@ class AgentCancellationTest {
       control.cancel();
       assertTrue(task.get(3, TimeUnit.SECONDS).stream().anyMatch(event -> event.type() == AgentEvent.Type.ERROR
           && event.message().contains("cancelled")));
+    } finally {
+      executor.shutdownNow();
     }
     assertEquals(1, executed.get());
     assertEquals(List.of("one", "two"), session.conversation().messages().stream()
@@ -97,7 +100,8 @@ class AgentCancellationTest {
           }
         }, false).onClose(closed::countDown), JvibeConfig::defaults);
 
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    var executor = Executors.newCachedThreadPool();
+    try {
       var task = executor.submit(() -> {
         try (var events = runner.run(session, "inspect", control, ToolApprover.ALWAYS)) {
           return events.toList();
@@ -106,6 +110,8 @@ class AgentCancellationTest {
       assertTrue(waiting.await(3, TimeUnit.SECONDS));
       assertTrue(task.get(3, TimeUnit.SECONDS).stream().anyMatch(event -> event.message().contains("timed out")));
       assertTrue(closed.await(1, TimeUnit.SECONDS));
+    } finally {
+      executor.shutdownNow();
     }
     assertTrue(session.conversation().messages().stream().anyMatch(message ->
         message.role() == Message.Role.ASSISTANT && message.content().equals("partial")));

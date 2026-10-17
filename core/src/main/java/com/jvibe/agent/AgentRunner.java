@@ -146,18 +146,17 @@ public final class AgentRunner {
     }
 
     private void handle(StreamEvent event) {
-      switch (event) {
-        case StreamEvent.AssistantDelta delta -> {
-          assistant.append(delta.text());
-          events.add(new AgentEvent(AgentEvent.Type.ASSISTANT_DELTA, delta.text()));
-        }
-        case StreamEvent.ToolCallRequested call -> requested.add(call.call());
-        case StreamEvent.Error error -> fail(error.message());
-        case StreamEvent.Done ignored -> {
-          closeStream();
-          recordAssistantTurn();
-          if (toolQueue.isEmpty()) finish();
-        }
+      if (event instanceof StreamEvent.AssistantDelta delta) {
+        assistant.append(delta.text());
+        events.add(new AgentEvent(AgentEvent.Type.ASSISTANT_DELTA, delta.text()));
+      } else if (event instanceof StreamEvent.ToolCallRequested call) {
+        requested.add(call.call());
+      } else if (event instanceof StreamEvent.Error error) {
+        fail(error.message());
+      } else {
+        closeStream();
+        recordAssistantTurn();
+        if (toolQueue.isEmpty()) finish();
       }
     }
 

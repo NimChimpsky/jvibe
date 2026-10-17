@@ -28,8 +28,8 @@ class SshImportServiceTest {
         + "    UserName    REG_SZ    deploy\n    PublicKeyFile    REG_SZ    C:\\keys\\prod.ppk\n";
     var connections = SshImportService.parseWindowsRegistry(text);
     assertEquals(1, connections.size());
-    assertEquals(2222, connections.getFirst().port());
-    assertEquals("deploy", connections.getFirst().user());
+    assertEquals(2222, connections.get(0).port());
+    assertEquals("deploy", connections.get(0).user());
   }
 
   @Test void importsPuttyFilesAndMergesStableIds() throws Exception {
@@ -41,7 +41,7 @@ class SshImportServiceTest {
     var service = new SshImportService(home, new ProcessRunner());
     var first = service.importAll();
     assertEquals(1, first.connections().size());
-    assertEquals("prod", first.connections().getFirst().name());
-    assertEquals(first.connections().getFirst().id(), service.importAll().connections().getFirst().id());
+    assertEquals("prod", first.connections().get(0).name());
+    assertEquals(first.connections().get(0).id(), service.importAll().connections().get(0).id());
   }
 }

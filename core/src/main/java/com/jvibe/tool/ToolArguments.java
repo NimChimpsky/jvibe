@@ -43,4 +43,9 @@ public final class ToolArguments {
       throw new IllegalArgumentException("Argument must be an integer: " + key);
     }
   }
+
+  /** Integer argument limited to [min, max]. */
+  public static int integer(Map<String, Object> arguments, String key, int fallback, int min, int max) {
+    return Math.max(min, Math.min(max, integer(arguments, key, fallback)));
+  }
 }

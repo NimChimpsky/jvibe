@@ -39,7 +39,7 @@ class SettingsPanelFactoryTest {
       SwingUtilities.invokeAndWait(() -> {
         var panel = new SettingsPanelFactory(config, accounts, scope.get(JvibeClient.class))
             .create(new JComboBox<>(new String[] {"Dracula"}));
-        var key = components(panel, JPasswordField.class).getFirst();
+        var key = components(panel, JPasswordField.class).get(0);
         assertEquals("jvibe_stored", new String(key.getPassword()));
         assertEquals(3, components(panel, JCheckBox.class).size(), "Build, Servers and Databases");
         assertEquals(Mode.values().length, components(panel, JTextArea.class).size());
@@ -47,7 +47,7 @@ class SettingsPanelFactoryTest {
         key.setText("jvibe_pasted");
         components(panel, JComboBox.class).stream().filter(box -> box.getItemCount() == Thinking.values().length)
             .findFirst().orElseThrow().setSelectedItem(Thinking.LOW);
-        components(panel, JSpinner.class).getFirst().setValue(40);
+        components(panel, JSpinner.class).get(0).setValue(40);
         components(panel, JTextArea.class).get(Mode.SERVERS.ordinal()).setText("Hosts run RHEL 8.");
         components(panel, JCheckBox.class).get(1).setSelected(true);
         components(panel, JButton.class).stream().filter(button -> "Save".equals(button.getText()))

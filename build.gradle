@@ -6,7 +6,7 @@ group = 'com.jvibe'
 version = '0.1.0-SNAPSHOT'
 
 ext {
-  jvibeJavaVersion = 21
+  jvibeJavaVersion = 17
   avajeInjectVersion = '12.5'
   avajeConfigVersion = '5.1'
   avajeJsonbVersion = '3.12'

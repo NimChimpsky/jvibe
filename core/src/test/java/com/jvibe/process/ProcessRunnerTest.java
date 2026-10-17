@@ -34,7 +34,8 @@ class ProcessRunnerTest {
   private void assertStopsChild(boolean interrupt) throws Exception {
     var marker = temp.resolve("child-" + interrupt + ".pid");
     var cancelled = new AtomicBoolean();
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    var executor = Executors.newCachedThreadPool();
+    try {
       var task = executor.submit(() -> runner.run(command("parent", marker.toString()), temp,
           new byte[0], Duration.ofSeconds(10), cancelled));
       var limit = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
@@ -46,6 +47,8 @@ class ProcessRunnerTest {
       limit = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
       while (ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false) && System.nanoTime() < limit) Thread.sleep(20);
       assertFalse(ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false), "Child survived cancellation");
+    } finally {
+      executor.shutdownNow();
     }
   }
 

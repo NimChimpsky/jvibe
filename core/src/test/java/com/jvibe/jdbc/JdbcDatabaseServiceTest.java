@@ -19,7 +19,7 @@ class JdbcDatabaseServiceTest {
     assertEquals(1, update.updateCount());
     assertEquals(java.util.List.of("ID", "NAME"), query.columns());
     assertEquals(1, query.rows().size());
-    assertEquals("JVibe", query.rows().getFirst().get(1));
+    assertEquals("JVibe", query.rows().get(0).get(1));
   }
 
   @Test

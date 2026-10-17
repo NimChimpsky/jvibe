@@ -34,9 +34,9 @@ public final class RunControl implements AutoCloseable {
     started = true;
     owner = Thread.currentThread();
     if (cancelled.get()) return;
-    timer = Thread.ofVirtual().name("jvibe-run-deadline").start(() -> {
+    timer = daemon("jvibe-run-deadline", () -> {
       try {
-        Thread.sleep(maxRuntime);
+        Thread.sleep(maxRuntime.toMillis());
         cancel("Run timed out after " + maxRuntime.toSeconds() + "s");
       } catch (InterruptedException ignored) { }
     });
@@ -51,7 +51,14 @@ public final class RunControl implements AutoCloseable {
     var thread = owner;
     if (thread != null && thread != Thread.currentThread()) thread.interrupt();
     // Closing an HTTP body can block briefly; never do that on Swing's event thread.
-    Thread.ofVirtual().name("jvibe-response-close").start(this::closeResponse);
+    daemon("jvibe-response-close", this::closeResponse);
+  }
+
+  private static Thread daemon(String name, Runnable task) {
+    var thread = new Thread(task, name);
+    thread.setDaemon(true);
+    thread.start();
+    return thread;
   }
 
   void track(AutoCloseable resource) {

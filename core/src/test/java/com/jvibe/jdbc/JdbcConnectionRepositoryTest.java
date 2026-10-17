@@ -23,7 +23,7 @@ class JdbcConnectionRepositoryTest {
     credentials.put(connection.id(), "do-not-persist".toCharArray());
     repository.save(connection);
 
-    assertEquals(connection, repository.connections().getFirst());
+    assertEquals(connection, repository.connections().get(0));
     assertFalse(Files.readString(paths.config()).contains("do-not-persist"));
     repository.delete(connection.id());
     assertTrue(repository.connections().isEmpty());

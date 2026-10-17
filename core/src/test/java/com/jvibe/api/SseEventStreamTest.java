@@ -62,7 +62,11 @@ class SseEventStreamTest {
 
     var closed = new AtomicBoolean();
     var events = SseEventStream.parse(Stream.of(delta("partial")).onClose(() -> closed.set(true))).toList();
-    assertInstanceOf(StreamEvent.Error.class, events.getLast());
+    assertInstanceOf(StreamEvent.Error.class, last(events));
     assertTrue(closed.get());
+  }
+
+  private static <T> T last(List<T> list) {
+    return list.get(list.size() - 1);
   }
 }

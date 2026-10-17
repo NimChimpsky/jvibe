@@ -21,7 +21,7 @@ public final class FileListTool {
 
   static ToolResult execute(ToolCall call, ToolExecutionContext context, FileToolAccess access) throws Exception {
     var path = ToolArguments.string(call.arguments(), "path", ".");
-    var limit = Math.clamp(ToolArguments.integer(call.arguments(), "limit", DEFAULT_LIMIT), 1, MAX_LIMIT);
+    var limit = ToolArguments.integer(call.arguments(), "limit", DEFAULT_LIMIT, 1, MAX_LIMIT);
     if (".".equals(path) || path.isBlank()) {
       var files = new ArrayList<String>();
       for (var root : access.listRoots(context.workspace())) {

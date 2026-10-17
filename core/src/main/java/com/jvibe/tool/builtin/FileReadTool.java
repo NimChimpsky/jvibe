@@ -25,7 +25,7 @@ public final class FileReadTool {
       return ToolResult.failure(call.id(), "Not a file: " + path);
     }
     var startLine = Math.max(1, ToolArguments.integer(call.arguments(), "startLine", 1));
-    var maxLines = Math.clamp(ToolArguments.integer(call.arguments(), "maxLines", DEFAULT_MAX_LINES), 1, MAX_LINES);
+    var maxLines = ToolArguments.integer(call.arguments(), "maxLines", DEFAULT_MAX_LINES, 1, MAX_LINES);
     var content = new StringBuilder();
     var currentLine = 0;
     var returned = 0;
