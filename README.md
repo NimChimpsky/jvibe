@@ -1,6 +1,6 @@
 # JVibe
 
-A Java desktop assistant for enterprise Java developers: inline chat, a coding agent for Git
+A Java desktop LLM agent and assistant for enterprise Java developers: inline chat, a coding agent for Git
 repositories, plain-English server administration over SSH, and SQL over JDBC.
 
 ## Requirements
