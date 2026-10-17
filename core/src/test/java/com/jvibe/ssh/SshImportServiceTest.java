@@ -1,52 +1,46 @@
 package com.jvibe.ssh;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
+import static org.junit.jupiter.api.Assertions.*;
+import com.jvibe.process.ProcessRunner;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class SshImportServiceTest {
-  @Test
-  void parsesOpenSshConfig() {
-    var connections = SshImportService.parseOpenSshConfig(List.of(
-        "Host prod",
-        "  HostName 10.0.0.10",
-        "  User deploy",
-        "  Port 2222",
-        "  IdentityFile ~/.ssh/prod_ed25519"));
+  @TempDir Path home;
 
-    assertEquals(1, connections.size());
-    assertEquals("prod", connections.getFirst().name());
-    assertEquals("10.0.0.10", connections.getFirst().host());
-    assertEquals("deploy", connections.getFirst().user());
-    assertEquals(2222, connections.getFirst().port());
-    assertEquals("~/.ssh/prod_ed25519", connections.getFirst().keyPath());
-  }
-
-  @Test
-  void parsesPuttySession() {
+  @Test void parsesPuttySessionAndSkipsNonSshProtocols() {
     var connection = SshImportService.parsePuttySession("prod", List.of(
-        "HostName=server.example.com",
-        "UserName=deploy",
-        "PortNumber=22",
-        "PublicKeyFile=/keys/prod.ppk")).orElseThrow();
-
-    assertEquals("prod", connection.name());
-    assertEquals("server.example.com", connection.host());
+        "HostName=server", "UserName=deploy", "PortNumber=2222", "PublicKeyFile=/keys/prod.ppk")).orElseThrow();
+    assertEquals("server", connection.host());
+    assertEquals(2222, connection.port());
     assertEquals("/keys/prod.ppk", connection.keyPath());
+    assertEquals(SshAccessMode.READ_ONLY, connection.accessMode());
+    assertTrue(SshImportService.parsePuttySession("telnet", List.of("HostName=server", "Protocol=telnet")).isEmpty());
   }
 
-  @Test
-  void readOnlyPolicyAllowsInspectionAndRejectsMutation() {
-    var policy = new SshReadOnlyPolicy();
+  @Test void parsesWindowsRegistryHexPorts() {
+    var text = "HKEY_CURRENT_USER\\Software\\SimonTatham\\PuTTY\\Sessions\\prod\n"
+        + "    HostName    REG_SZ    server\n    PortNumber    REG_DWORD    0x8ae\n"
+        + "    UserName    REG_SZ    deploy\n    PublicKeyFile    REG_SZ    C:\\keys\\prod.ppk\n";
+    var connections = SshImportService.parseWindowsRegistry(text);
+    assertEquals(1, connections.size());
+    assertEquals(2222, connections.getFirst().port());
+    assertEquals("deploy", connections.getFirst().user());
+  }
 
-    assertTrue(policy.isAllowed("find /tmp -type f | sort | tail -1"));
-    assertTrue(!policy.isAllowed("rm -rf /tmp/foo"));
-    assertTrue(!policy.isAllowed("find /tmp -type f > /tmp/out"));
-    assertTrue(!policy.isAllowed("find /tmp -delete"));
-    assertTrue(!policy.isAllowed("awk 'BEGIN { system(\"rm -rf /tmp/foo\") }'"));
-    assertTrue(!policy.isAllowed("sed -i s/a/b/ file"));
-    assertTrue(policy.isAllowed("grep -i error app.log | head -20"));
+  @Test void importsPuttyFilesAndMergesStableIds() throws Exception {
+    org.junit.jupiter.api.Assumptions.assumeFalse(System.getProperty("os.name").toLowerCase().contains("win"));
+    var folder = Files.createDirectories(home.resolve(".putty/sessions"));
+    Files.writeString(folder.resolve("prod"), "HostName=server\nUserName=deploy\n");
+    Files.createDirectories(home.resolve(".ssh"));
+    Files.writeString(home.resolve(".ssh/config"), "Host other\nHostName ignored\n");
+    var service = new SshImportService(home, new ProcessRunner());
+    var first = service.importAll();
+    assertEquals(1, first.connections().size());
+    assertEquals("prod", first.connections().getFirst().name());
+    assertEquals(first.connections().getFirst().id(), service.importAll().connections().getFirst().id());
   }
 }

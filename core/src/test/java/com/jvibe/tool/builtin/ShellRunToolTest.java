@@ -18,12 +18,13 @@ import org.junit.jupiter.api.io.TempDir;
 
 class ShellRunToolTest {
   @TempDir Path temp;
+  private final com.jvibe.process.ProcessRunner processes = new com.jvibe.process.ProcessRunner();
 
   @Test
   void runsCommandAndCapturesOutput() throws Exception {
     var result = ShellRunTool.execute(
         call("printf hello"),
-        new ToolExecutionContext(new Workspace(temp), Duration.ofSeconds(5), new AtomicBoolean(false)));
+        new ToolExecutionContext(new Workspace(temp), Duration.ofSeconds(5), new AtomicBoolean(false)), processes);
 
     assertTrue(result.success());
     assertEquals("hello", result.payload().get("stdout"));
@@ -35,7 +36,7 @@ class ShellRunToolTest {
     var started = System.nanoTime();
     var result = ShellRunTool.execute(
         call("sleep 5"),
-        new ToolExecutionContext(new Workspace(temp), Duration.ofMillis(100), new AtomicBoolean(false)));
+        new ToolExecutionContext(new Workspace(temp), Duration.ofMillis(100), new AtomicBoolean(false)), processes);
     var elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
 
     assertFalse(result.success());
@@ -50,7 +51,7 @@ class ShellRunToolTest {
     try {
       var future = executor.submit(() -> ShellRunTool.execute(
           call("sleep 30"),
-          new ToolExecutionContext(new Workspace(temp), Duration.ofSeconds(30), cancelled)));
+          new ToolExecutionContext(new Workspace(temp), Duration.ofSeconds(30), cancelled), processes));
 
       Thread.sleep(150);
       cancelled.set(true);
@@ -69,7 +70,7 @@ class ShellRunToolTest {
         System.getProperty("os.name", "").toLowerCase().contains("win"));
     var result = ShellRunTool.execute(
         call("head -c 5000000 /dev/zero | tr '\\0' x"),
-        new ToolExecutionContext(new Workspace(temp), Duration.ofSeconds(10), new AtomicBoolean(false)));
+        new ToolExecutionContext(new Workspace(temp), Duration.ofSeconds(10), new AtomicBoolean(false)), processes);
 
     assertTrue(result.success());
     assertTrue(result.payload().get("stdout").toString().endsWith("[output truncated at 4 MiB]"));

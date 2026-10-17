@@ -18,7 +18,9 @@ public final class GitDiffTool {
   }
 
   static ToolResult execute(ToolCall call, ToolExecutionContext context, GitService git) throws Exception {
-    var result = git.run(context.workspace().root(), "diff");
-    return ToolResult.success(call.id(), Map.of("exitCode", result.exitCode(), "stdout", result.stdout(), "stderr", result.stderr()), "Git diff");
+    var result = git.run(context.workspace().root(), new byte[0], context.timeout(), context.cancelled(), "diff");
+    var payload = Map.<String, Object>of("exitCode", result.exitCode(), "stdout", result.stdout(), "stderr", result.stderr());
+    return result.exitCode() == 0 ? ToolResult.success(call.id(), payload, "Git diff")
+        : ToolResult.failure(call.id(), payload, "Git diff failed");
   }
 }

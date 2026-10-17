@@ -23,14 +23,15 @@ public final class GitCommitTool {
 
   static ToolResult execute(ToolCall call, ToolExecutionContext context, GitService git) throws Exception {
     var message = ToolArguments.string(call.arguments(), "message");
-    var add = git.run(context.workspace().root(), "add", "-A");
+    var add = git.run(context.workspace().root(), new byte[0], context.timeout(), context.cancelled(), "add", "-A");
     if (add.exitCode() != 0) {
       return ToolResult.failure(call.id(), add.stderr());
     }
-    var commit = git.run(context.workspace().root(), "commit", "-m", message);
-    return ToolResult.success(
-        call.id(),
-        Map.of("exitCode", commit.exitCode(), "stdout", commit.stdout(), "stderr", commit.stderr()),
-        "Git commit exited " + commit.exitCode());
+    context.ensureActive();
+    var commit = git.run(context.workspace().root(), new byte[0], context.timeout(), context.cancelled(), "commit", "-m", message);
+    var payload = Map.<String, Object>of("exitCode", commit.exitCode(), "stdout", commit.stdout(), "stderr", commit.stderr());
+    var summary = "Git commit exited " + commit.exitCode();
+    return commit.exitCode() == 0 ? ToolResult.success(call.id(), payload, summary)
+        : ToolResult.failure(call.id(), payload, summary);
   }
 }

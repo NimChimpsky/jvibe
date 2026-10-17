@@ -2,9 +2,6 @@ package com.jvibe.cli;
 
 import com.jvibe.agent.AgentRunner;
 import com.jvibe.config.ConfigService;
-import com.jvibe.deployment.DeploymentProfile;
-import com.jvibe.deployment.DeploymentService;
-import com.jvibe.deployment.DeploymentTarget;
 import com.jvibe.session.AgentSession;
 import com.jvibe.session.SessionFactory;
 import com.jvibe.tool.ToolRegistryFactory;
@@ -29,24 +26,11 @@ public final class JvibeCli {
         tools(args, toolRegistryFactory, scope.get(DynamicToolManagementTools.class));
         return;
       }
-      if (args.length > 0 && "deploy".equals(args[0])) {
-        deploy(args, scope.get(DeploymentService.class));
-        return;
-      }
-      if (args.length > 0 && "gateway".equals(args[0])) {
-        gateway(args, runner, sessionFactory);
-        return;
-      }
-      if (args.length > 0 && "daemon".equals(args[0])) {
-        daemon(args, runner, sessionFactory, config);
-        return;
-      }
-
       var session = sessionFactory.create(Path.of(System.getProperty("user.dir")));
 
       if (args.length > 0 && "run".equals(args[0])) {
         var prompt = args.length > 1 ? args[1] : "";
-        runner.run(session, prompt).forEach(event -> System.out.println(event.message()));
+        printRun(runner, session, prompt);
         return;
       }
 
@@ -70,8 +54,14 @@ public final class JvibeCli {
           session.toolRegistry().definitions().forEach(tool -> System.out.println(tool.id() + " - " + tool.description()));
           continue;
         }
-        runner.run(session, line).forEach(event -> System.out.println(event.message()));
+        printRun(runner, session, line);
       }
+    }
+  }
+
+  private static void printRun(AgentRunner runner, AgentSession session, String prompt) {
+    try (var events = runner.run(session, prompt)) {
+      events.forEach(event -> System.out.println(event.message()));
     }
   }
 
@@ -104,66 +94,6 @@ public final class JvibeCli {
     (result.success() ? System.out : System.err).println(result.summary());
   }
 
-  private static void gateway(String[] args, AgentRunner runner, SessionFactory sessionFactory) throws Exception {
-    var host = option(args, "--host", "127.0.0.1");
-    var port = Integer.parseInt(option(args, "--port", "8737"));
-    var workspace = Path.of(option(args, "--workspace", System.getProperty("user.dir")));
-    new GatewayServer(runner, sessionFactory, host, port, workspace).start();
-    System.out.println("Gateway listening on http://" + host + ":" + port);
-    Thread.currentThread().join();
-  }
-
-  private static void daemon(
-      String[] args,
-      AgentRunner runner,
-      SessionFactory sessionFactory,
-      ConfigService config) throws Exception {
-    var cfg = config.config();
-    var workspace = Path.of(option(args, "--workspace", System.getProperty("user.dir")));
-    var gatewayEnabled = Boolean.parseBoolean(option(args, "--gateway-enabled", Boolean.toString(cfg.gatewayEnabled())));
-    var gatewayHost = option(args, "--gateway-host", cfg.gatewayHost());
-    var gatewayPort = Integer.parseInt(option(args, "--gateway-port", Integer.toString(cfg.gatewayPort())));
-    if (gatewayEnabled) {
-      new GatewayServer(runner, sessionFactory, gatewayHost, gatewayPort, workspace).start();
-      System.out.println("Daemon gateway listening on http://" + gatewayHost + ":" + gatewayPort);
-    } else {
-      System.out.println("Daemon started without gateway");
-    }
-    Thread.currentThread().join();
-  }
-
-  private static void deploy(String[] args, DeploymentService service) {
-    var type = args.length > 1 ? args[1] : "local";
-    var dryRun = has(args, "--dry-run");
-    var jar = Path.of(option(args, "--jar", currentJar()));
-    var target = new DeploymentTarget(
-        type,
-        option(args, "--host", ""),
-        option(args, "--user", ""),
-        option(args, "--path", "~/.jvibe/agent"),
-        option(args, "--workspace", System.getProperty("user.dir")),
-        Integer.parseInt(option(args, "--port", "22")),
-        option(args, "--key", ""));
-    var profile = new DeploymentProfile(
-        option(args, "--profile", "default"),
-        target,
-        option(args, "--provider", "jvibe"),
-        option(args, "--model", "jvibe-coder"),
-        true,
-        option(args, "--gateway-host", "127.0.0.1"),
-        Integer.parseInt(option(args, "--gateway-port", "8737")));
-    var result = dryRun
-        ? service.plan(profile, jar)
-        : "ssh".equalsIgnoreCase(type)
-            ? service.deploySsh(profile, jar)
-            : service.deployLocal(profile, jar);
-    System.out.println(result.summary());
-    result.commands().forEach(System.out::println);
-    if (!result.serviceConfig().isBlank()) {
-      System.out.println(result.serviceConfig());
-    }
-  }
-
   private static String option(String[] args, String name, String fallback) {
     for (var i = 0; i < args.length - 1; i++) {
       if (name.equals(args[i])) {
@@ -173,20 +103,4 @@ public final class JvibeCli {
     return fallback;
   }
 
-  private static boolean has(String[] args, String name) {
-    for (var arg : args) {
-      if (name.equals(arg)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  private static String currentJar() {
-    try {
-      return Path.of(JvibeCli.class.getProtectionDomain().getCodeSource().getLocation().toURI()).toString();
-    } catch (Exception e) {
-      return "app-cli/build/libs/jvibe-cli-0.1.0-SNAPSHOT.jar";
-    }
-  }
 }

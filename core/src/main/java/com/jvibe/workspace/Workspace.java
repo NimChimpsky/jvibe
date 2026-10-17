@@ -8,10 +8,6 @@ public record Workspace(Path root) {
   }
 
   public Path resolveInside(String path) {
-    var resolved = root.resolve(path).normalize();
-    if (!resolved.startsWith(root)) {
-      throw new IllegalArgumentException("Path escapes workspace: " + path);
-    }
-    return resolved;
+    return PathBoundary.requireInside(root, root.resolve(path));
   }
 }

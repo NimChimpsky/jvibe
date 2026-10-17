@@ -1,67 +1,51 @@
 package com.jvibe.provider;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
+import static org.junit.jupiter.api.Assertions.*;
 import com.jvibe.config.JvibePaths;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class ProviderConfigServiceTest {
-  @TempDir java.nio.file.Path home;
+  @TempDir Path home;
 
-  @Test
-  void savesAndLoadsProviderSettings() {
+  @Test void jvibeIsTheOnlyBackendAndCannotBeDisabledOrRedirected() {
     var service = new ProviderConfigService(JvibePaths.under(home));
-    service.save(new ProviderSettings("openai", "https://api.openai.com/v1", "sk-test-secret", "gpt-5.4", "high", true));
-
-    var settings = service.settings("openai");
-
-    assertEquals("sk-test-secret", settings.apiKey());
-    assertEquals("gpt-5.4", settings.selectedModel());
-    assertEquals("high", settings.thinking());
-    assertTrue(settings.enabled());
+    assertEquals(List.of("jvibe"), service.definitions().stream().map(ProviderDefinition::id).toList());
+    service.save(new ProviderSettings("jvibe", "https://untrusted.invalid", "secret", "model", "high", false));
+    var saved = service.settings("jvibe");
+    assertEquals(JvibeProviderClient.BASE_URL, saved.baseUrl());
+    assertTrue(saved.enabled());
+    assertEquals("jvibe", service.defaultProvider());
+    assertThrows(IllegalArgumentException.class, () -> service.save(
+        new ProviderSettings("other", "", "secret", "model", "none", true)));
   }
 
-  @Test
-  void bootstrapsDefaultProviders() {
-    var service = new ProviderConfigService(JvibePaths.under(home));
-
-    var config = service.load();
-
-    assertFalse(config.providers().isEmpty());
-    assertEquals(List.of("jvibe", "openai", "anthropic", "mistral", "deepseek", "qwen"),
-        config.providers().stream().map(ProviderSettings::provider).toList());
-    assertTrue(config.providers().stream().anyMatch(provider -> provider.provider().equals("deepseek")));
-    assertTrue(config.providers().stream().anyMatch(provider -> provider.provider().equals("qwen")));
-    assertTrue(config.providers().stream().anyMatch(provider -> provider.provider().equals("jvibe")));
-    assertFalse(config.providers().stream().anyMatch(provider -> provider.provider().equals("openrouter")));
-    assertTrue(Files.exists(JvibePaths.under(home).providers()));
-  }
-
-  @Test
-  void ignoresSavedUnknownOpenRouterConfig() throws Exception {
+  @Test void keyModelAndThinkingRoundTripWithRestrictedPermissions() throws Exception {
     var paths = JvibePaths.under(home);
-    Files.createDirectories(paths.providers().getParent());
-    Files.writeString(paths.providers(), """
-        {"providers":[{"provider":"openrouter","baseUrl":"https://openrouter.ai/api/v1","apiKey":"key","selectedModel":"openrouter/auto","thinking":"none","enabled":true}]}
-        """);
     var service = new ProviderConfigService(paths);
-
-    var config = service.load();
-
-    assertFalse(config.providers().stream().anyMatch(provider -> provider.provider().equals("openrouter")));
-    assertTrue(config.providers().stream().anyMatch(provider -> provider.provider().equals("jvibe")));
+    service.save(new ProviderSettings("jvibe", "", "secret-key", "custom-model", "medium", true));
+    assertEquals("secret-key", service.settings("jvibe").apiKey());
+    assertEquals("custom-model", service.settings("jvibe").selectedModel());
+    assertEquals("medium", service.settings("jvibe").thinking());
+    assertNotEquals("secret-key", service.masked(service.settings("jvibe")).apiKey());
+    assertFalse(service.settings("jvibe").toString().contains("secret-key"));
+    if (Files.getFileStore(paths.providers()).supportsFileAttributeView("posix")) {
+      assertEquals(java.util.Set.of(java.nio.file.attribute.PosixFilePermission.OWNER_READ,
+          java.nio.file.attribute.PosixFilePermission.OWNER_WRITE), Files.getPosixFilePermissions(paths.providers()));
+    }
   }
 
-  @Test
-  void qwenRegionBaseUrlPersists() {
-    var service = new ProviderConfigService(JvibePaths.under(home));
-    service.save(new ProviderSettings("qwen", QwenProviderClient.CHINA_BASE_URL, "key", "qwen3-coder-plus", "on", true));
-
-    assertEquals(QwenProviderClient.CHINA_BASE_URL, service.settings("qwen").baseUrl());
+  @Test void unrelatedSavedProvidersAreNotExposedAndMalformedFilesAreNotOverwritten() throws Exception {
+    var paths = JvibePaths.under(home);
+    Files.createDirectories(paths.home());
+    Files.writeString(paths.providers(), "{\"providers\":[{\"provider\":\"other\",\"apiKey\":\"old\"}]}");
+    var service = new ProviderConfigService(paths);
+    assertEquals(List.of("jvibe"), service.load().providers().stream().map(ProviderSettings::provider).toList());
+    Files.writeString(paths.providers(), "{broken");
+    assertThrows(IllegalStateException.class, service::load);
+    assertEquals("{broken", Files.readString(paths.providers()));
   }
 }

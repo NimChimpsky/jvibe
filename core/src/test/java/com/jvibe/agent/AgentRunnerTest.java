@@ -279,6 +279,46 @@ class AgentRunnerTest {
   }
 
   @Test
+  void limitAnswersEveryPendingToolAndClosesEveryProviderResponse() {
+    var closed = new AtomicInteger();
+    var requested = new AtomicInteger();
+    var provider = new ProviderClient() {
+      @Override public String providerId() { return "local"; }
+      @Override public List<ModelDescriptor> models() { return List.of(); }
+      @Override public List<ModelDescriptor> refreshModels(ProviderSettings settings) { return List.of(); }
+      @Override public Stream<ProviderEvent> stream(ProviderRequest request) {
+        if (requested.getAndIncrement() > 0) {
+          var results = request.messages().stream().filter(message -> message.role() == Message.Role.TOOL).toList();
+          assertEquals(List.of("call_1", "call_2", "call_3"),
+              results.stream().map(message -> message.metadata().get("toolCallId")).toList());
+          return Stream.<ProviderEvent>of(new ProviderEvent.AssistantDelta("recovered"), new ProviderEvent.Done())
+              .onClose(closed::incrementAndGet);
+        }
+        return Stream.<ProviderEvent>of(
+            new ProviderEvent.ToolCallRequested(new ToolCall("call_1", "fake", Map.of())),
+            new ProviderEvent.ToolCallRequested(new ToolCall("call_2", "fake", Map.of())),
+            new ProviderEvent.ToolCallRequested(new ToolCall("call_3", "fake", Map.of())),
+            new ProviderEvent.Done()).onClose(closed::incrementAndGet);
+      }
+    };
+    var executed = new AtomicInteger();
+    var registry = new ToolRegistry();
+    registry.register(new RegisteredTool(new ToolDefinition("fake", "Fake", "Fake", Map.of()), (call, context) -> {
+      executed.incrementAndGet();
+      return ToolResult.success(call.id(), Map.of(), "done");
+    }));
+    var session = localSession(registry, AgentSession.Mode.WORKSPACE);
+    var runner = new AgentRunner(provider, "system", 1);
+    runner.run(session, "run").toList();
+    assertEquals(1, executed.get());
+    assertEquals(1, closed.get());
+    try (var events = runner.run(session, "continue")) {
+      assertTrue(events.anyMatch(event -> event.message().equals("recovered")));
+    }
+    assertEquals(2, closed.get());
+  }
+
+  @Test
   void usesChatPromptForChatSessions() throws Exception {
     var captured = new AtomicReference<String>();
     var runner = runnerCapturingSystemPrompt(captured);
@@ -286,8 +326,8 @@ class AgentRunnerTest {
 
     runner.run(session, "hello").toList();
 
-    assertTrue(captured.get().contains("default Chat mode"));
-    assertTrue(captured.get().contains("under ~/.jvibe/tmp"));
+    assertTrue(captured.get().contains("Chat mode"));
+    assertTrue(captured.get().contains("Never create, edit, delete"));
   }
 
   @Test
@@ -298,8 +338,20 @@ class AgentRunnerTest {
 
     runner.run(session, "hello").toList();
 
-    assertTrue(captured.get().contains("Workspace mode"));
-    assertTrue(captured.get().contains("workspace root"));
+    assertTrue(captured.get().contains("Build mode"));
+    assertTrue(captured.get().contains("Git repository"));
+  }
+
+  @Test
+  void usesSqlOnlyPromptForJdbcSessions() throws Exception {
+    var captured = new AtomicReference<String>();
+    var runner = runnerCapturingSystemPrompt(captured);
+    var session = new AgentSession(new Workspace(temp), new ToolRegistry(), AgentSession.Mode.JDBC);
+
+    runner.run(session, "list projects").toList();
+
+    assertTrue(captured.get().contains("exactly one executable query or CRUD statement"));
+    assertTrue(captured.get().contains("Do not use Markdown fences"));
   }
 
   private ProviderClient providerCalling(String tool) {

@@ -10,10 +10,10 @@ dependencies {
   implementation 'jakarta.inject:jakarta.inject-api:2.0.1'
   implementation "jakarta.annotation:jakarta.annotation-api:${jakartaAnnotationVersion}"
   implementation "org.apache.sshd:sshd-core:${minaSshdVersion}"
-  implementation "org.apache.sshd:sshd-sftp:${minaSshdVersion}"
   implementation "org.apache.sshd:sshd-putty:${minaSshdVersion}"
   implementation 'org.slf4j:slf4j-api:2.0.17'
 
   testAnnotationProcessor "io.avaje:avaje-inject-generator:${avajeInjectVersion}"
   testRuntimeOnly "io.avaje:avaje-simple-logger:${avajeSimpleLoggerVersion}"
+  testImplementation 'com.h2database:h2:2.4.240'
 }

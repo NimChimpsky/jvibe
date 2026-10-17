@@ -58,7 +58,8 @@ class DynamicToolRegistryTest {
         """);
 
     var registry = new ToolRegistry();
-    var dynamic = new DynamicToolRegistry(temp.resolve("user-tools"), new ToolBuildService());
+    var dynamic = new DynamicToolRegistry(temp.resolve("user-tools"), new ToolBuildService(),
+        new com.jvibe.git.GitService(new com.jvibe.process.ProcessRunner()));
     dynamic.buildLoadAndRegister(toolDir, registry);
 
     assertTrue(registry.find("hello_tool").isPresent());
@@ -89,7 +90,8 @@ class DynamicToolRegistryTest {
     var workspace = new Workspace(temp.resolve("project"));
     Files.createDirectories(workspace.root());
     var registry = new ToolRegistry();
-    var dynamic = new DynamicToolRegistry(paths.tools(), new ToolBuildService());
+    var dynamic = new DynamicToolRegistry(paths.tools(), new ToolBuildService(),
+        new com.jvibe.git.GitService(new com.jvibe.process.ProcessRunner()));
     var management = new DynamicToolManagementTools(paths, dynamic);
     management.tools(workspace, registry).forEach(registry::register);
     var context = ToolExecutionContext.defaults(workspace);

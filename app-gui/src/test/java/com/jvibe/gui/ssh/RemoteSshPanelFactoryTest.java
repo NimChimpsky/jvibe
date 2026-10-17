@@ -2,6 +2,8 @@ package com.jvibe.gui.ssh;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 
 import com.jvibe.ssh.SshAccessMode;
 import com.jvibe.ssh.SshConnection;
@@ -34,5 +36,23 @@ class RemoteSshPanelFactoryTest {
     try (var scope = BeanScope.builder().build()) {
       assertNotNull(scope.get(RemoteSshPanelFactory.class));
     }
+  }
+
+  @Test
+  void sshChatReusesSharedComposerAndContextDescribesAccess() throws Exception {
+    javax.swing.SwingUtilities.invokeAndWait(() -> {
+      var panel = new RemoteSshChatPanel(
+          java.nio.file.Path.of("."), mock(com.jvibe.session.SessionFactory.class),
+          mock(com.jvibe.ssh.SshConnectionService.class),
+          mock(com.jvibe.gui.controller.ModelSelectionController.class),
+          mock(com.jvibe.gui.chat.ChatPromptRunner.class), message -> { });
+      assertTrue(java.util.Arrays.stream(panel.getComponents())
+          .anyMatch(com.jvibe.gui.chat.ChatComposer.class::isInstance));
+      var connection = new SshConnection("prod", "Production", "host", "user", 22, "", SshAccessMode.READ_ONLY, "");
+      var context = RemoteSshChatPanel.promptWithSessions("Inspect disk", java.util.List.of(connection));
+      assertTrue(context.contains("sessionId=prod"));
+      assertTrue(context.contains("accessMode=READ_ONLY"));
+      assertTrue(context.endsWith("User request:\nInspect disk"));
+    });
   }
 }

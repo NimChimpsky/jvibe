@@ -1,6 +1,7 @@
 package com.jvibe.session;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.jvibe.config.JvibePaths;
 import com.jvibe.git.GitService;
@@ -36,11 +37,19 @@ class SessionFactoryTest {
     assertEquals(AgentSession.Mode.CHAT, session.mode());
   }
 
+  @Test
+  void createsJdbcSessionsWithoutTools() {
+    var session = factory().createJdbc(home.resolve("tmp"));
+
+    assertEquals(AgentSession.Mode.JDBC, session.mode());
+    assertTrue(session.toolRegistry().definitions().isEmpty());
+  }
+
   private SessionFactory factory() {
     var paths = JvibePaths.under(home);
-    var dynamicTools = new DynamicToolRegistry(paths, new ToolBuildService(), new GitService());
+    var dynamicTools = new DynamicToolRegistry(paths, new ToolBuildService(), new GitService(new com.jvibe.process.ProcessRunner()));
     var toolFactory = new ToolRegistryFactory(
-        new BuiltinToolSet(List.of()),
+        new BuiltinToolSet(List.of(com.jvibe.tool.builtin.FileReadTool.registered(), com.jvibe.tool.builtin.FileWriteTool.registered())),
         dynamicTools,
         new DynamicToolManagementTools(paths, dynamicTools));
     return new SessionFactory(toolFactory, new ProviderConfigService(paths));

@@ -22,7 +22,7 @@ public record ProviderSettings(
     return new ProviderSettings(provider, baseUrl, apiKey, selectedModel, value, enabled);
   }
 
-  public ProviderSettings withEnabled(boolean value) {
-    return new ProviderSettings(provider, baseUrl, apiKey, selectedModel, thinking, value);
+  @Override public String toString() {
+    return "JVibe settings [model=" + selectedModel + ", thinking=" + thinking + ", apiKey=[REDACTED]]";
   }
 }

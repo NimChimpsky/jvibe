@@ -18,7 +18,9 @@ public final class GitStatusTool {
   }
 
   static ToolResult execute(ToolCall call, ToolExecutionContext context, GitService git) throws Exception {
-    var result = git.run(context.workspace().root(), "status", "--short", "--branch");
-    return ToolResult.success(call.id(), Map.of("exitCode", result.exitCode(), "stdout", result.stdout(), "stderr", result.stderr()), "Git status");
+    var result = git.run(context.workspace().root(), new byte[0], context.timeout(), context.cancelled(), "status", "--short", "--branch");
+    var payload = Map.<String, Object>of("exitCode", result.exitCode(), "stdout", result.stdout(), "stderr", result.stderr());
+    return result.exitCode() == 0 ? ToolResult.success(call.id(), payload, "Git status")
+        : ToolResult.failure(call.id(), payload, "Git status failed");
   }
 }

@@ -4,6 +4,7 @@ import com.jvibe.provider.ProviderConfigService;
 import com.jvibe.ssh.RemoteSshToolRegistryFactory;
 import com.jvibe.ssh.SshConnection;
 import com.jvibe.tool.ToolRegistryFactory;
+import com.jvibe.tool.ToolRegistry;
 import com.jvibe.workspace.Workspace;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
@@ -44,7 +45,7 @@ public final class SessionFactory {
 
   public AgentSession createDefaultChat(Path tmp, Supplier<List<Path>> references) {
     var workspace = new Workspace(tmp);
-    var session = new AgentSession(workspace, toolRegistryFactory.createDefaultChat(tmp, references), AgentSession.Mode.CHAT);
+    var session = new AgentSession(workspace, toolRegistryFactory.createDefaultChat(references), AgentSession.Mode.CHAT);
     var settings = providerConfigService.settings(providerConfigService.defaultProvider());
     session.selectModel(settings.provider(), settings.selectedModel());
     return session;
@@ -61,4 +62,16 @@ public final class SessionFactory {
     session.selectModel(settings.provider(), settings.selectedModel());
     return session;
   }
+
+  public AgentSession createJdbc(Path tmp) {
+    return toolFree(tmp, AgentSession.Mode.JDBC);
+  }
+
+  private AgentSession toolFree(Path root, AgentSession.Mode mode) {
+    var session = new AgentSession(new Workspace(root), new ToolRegistry(), mode);
+    var settings = providerConfigService.settings(providerConfigService.defaultProvider());
+    session.selectModel(settings.provider(), settings.selectedModel());
+    return session;
+  }
+
 }

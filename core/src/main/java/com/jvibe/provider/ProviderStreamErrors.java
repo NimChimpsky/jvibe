@@ -16,7 +16,9 @@ final class ProviderStreamErrors {
   }
 
   static String message(Stream<String> lines) {
-    return message(lines.collect(Collectors.joining("\n")));
+    try (lines) {
+      return message(lines.limit(100).collect(Collectors.joining("\n")));
+    }
   }
 
   static String message(String body) {

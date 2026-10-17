@@ -46,9 +46,13 @@ public final class AgentRunner {
   }
 
   public Stream<AgentEvent> run(AgentSession session, String prompt) {
+    return run(session, prompt, new RunControl());
+  }
+
+  public Stream<AgentEvent> run(AgentSession session, String prompt, RunControl control) {
+    var run = new RunIterator(session, prompt, control);
     return StreamSupport.stream(Spliterators.spliteratorUnknownSize(
-        new RunIterator(session, prompt),
-        java.util.Spliterator.ORDERED), false);
+        run, java.util.Spliterator.ORDERED), false).onClose(run::close);
   }
 
   private ProviderClient client(String provider) {
@@ -83,11 +87,12 @@ public final class AgentRunner {
       return fallbackSystemPrompt;
     }
     try {
-      return session.mode() == AgentSession.Mode.CHAT
-          ? configService.chatPrompt()
-          : session.mode() == AgentSession.Mode.REMOTE_SSH
-              ? configService.remoteSshPrompt()
-              : configService.workspacePrompt();
+      return switch (session.mode()) {
+        case CHAT -> configService.chatPrompt();
+        case WORKSPACE -> configService.workspacePrompt();
+        case REMOTE_SSH -> configService.remoteSshPrompt();
+        case JDBC -> configService.jdbcPrompt();
+      };
     } catch (java.io.IOException e) {
       return fallbackSystemPrompt;
     }
@@ -105,17 +110,20 @@ public final class AgentRunner {
   }
 
   private final class RunIterator implements Iterator<AgentEvent> {
-    private final ArrayList<AgentEvent> events = new ArrayList<>();
+    private final java.util.ArrayDeque<AgentEvent> events = new java.util.ArrayDeque<>();
     private final AgentSession session;
+    private final RunControl control;
     private Iterator<ProviderEvent> providerEvents;
     private final StringBuilder assistant = new StringBuilder();
     private final StringBuilder reasoning = new StringBuilder();
+    private final java.util.LinkedHashMap<String, Object> assistantMetadata = new java.util.LinkedHashMap<>();
     private final ArrayList<com.jvibe.tool.ToolCall> pendingToolCalls = new ArrayList<>();
     private int iterations;
     private boolean complete;
 
-    RunIterator(AgentSession session, String prompt) {
+    RunIterator(AgentSession session, String prompt, RunControl control) {
       this.session = session;
+      this.control = control;
       session.conversation().add(new Message(Message.Role.USER, prompt));
     }
 
@@ -134,52 +142,61 @@ public final class AgentRunner {
     }
 
     private void fill() {
+      control.start();
       while (events.isEmpty() && !complete) {
-        if (iterations > currentMaxToolIterations()) {
-          complete = true;
-          events.add(AgentEvent.error("Max tool iterations exceeded"));
+        if (control.cancelled().get()) {
+          stop();
           return;
         }
         if (providerEvents == null) {
           try {
-            providerEvents = client(session.provider()).stream(request(session)).iterator();
+            var providerStream = client(session.provider()).stream(request(session));
+            control.track(providerStream);
+            providerEvents = providerStream.iterator();
           } catch (RuntimeException e) {
             complete = true;
-            events.add(AgentEvent.error(e.getMessage()));
+            closeProvider();
+            events.add(AgentEvent.error(control.cancelled().get() ? control.reason() : e.getMessage()));
+            control.close();
             return;
           }
         }
-        if (!providerEvents.hasNext()) {
+        ProviderEvent event;
+        try {
+          event = providerEvents.hasNext() ? providerEvents.next() : new ProviderEvent.Done();
+        } catch (RuntimeException e) {
+          event = new ProviderEvent.Error(e.getMessage() == null ? "Provider stream failed" : e.getMessage(), true);
+        }
+        if (control.cancelled().get()) { stop(); return; }
+        if (event instanceof ProviderEvent.Done) {
+          closeProvider();
           if (!pendingToolCalls.isEmpty()) {
             executePendingTools();
             continue;
           }
           finishAssistantMessage();
           complete = true;
+          control.close();
           events.add(new AgentEvent(AgentEvent.Type.DONE, "done"));
           return;
         }
-        var event = providerEvents.next();
         switch (event) {
           case ProviderEvent.AssistantDelta delta -> {
             assistant.append(delta.text());
             events.add(new AgentEvent(AgentEvent.Type.ASSISTANT_DELTA, delta.text()));
           }
           case ProviderEvent.ReasoningDelta delta -> reasoning.append(delta.text());
+          case ProviderEvent.AssistantMetadata metadata -> assistantMetadata.putAll(metadata.values());
           case ProviderEvent.ToolCallRequested toolCall -> pendingToolCalls.add(toolCall.call());
-          case ProviderEvent.Done ignored -> {
-            if (!pendingToolCalls.isEmpty()) {
-              executePendingTools();
-              continue;
-            }
-            finishAssistantMessage();
-            complete = true;
-            events.add(new AgentEvent(AgentEvent.Type.DONE, "done"));
-          }
+          case ProviderEvent.Done ignored -> throw new IllegalStateException("Done handled above");
           case ProviderEvent.Error error -> {
             events.add(AgentEvent.error(error.message()));
             if (error.fatal()) {
               complete = true;
+              closeProvider();
+              if (!pendingToolCalls.isEmpty()) completeToolTurn(error.message());
+              else finishAssistantMessage();
+              control.close();
             }
           }
         }
@@ -187,7 +204,12 @@ public final class AgentRunner {
     }
 
     private void executePendingTools() {
-      var metadata = new java.util.LinkedHashMap<String, Object>();
+      completeToolTurn(null);
+    }
+
+    private void completeToolTurn(String skipReason) {
+      var metadata = new java.util.LinkedHashMap<String, Object>(assistantMetadata);
+      assistantMetadata.clear();
       metadata.put("toolCalls", pendingToolCalls.stream().map(call -> Map.<String, Object>of(
           "id", call.id(),
           "name", call.name(),
@@ -204,14 +226,17 @@ public final class AgentRunner {
       assistant.setLength(0);
 
       for (var call : pendingToolCalls) {
-        if (iterations >= currentMaxToolIterations()) {
+        com.jvibe.tool.ToolResult result;
+        if (skipReason != null || control.cancelled().get() || iterations >= currentMaxToolIterations()) {
           complete = true;
-          events.add(AgentEvent.error("Max tool iterations exceeded"));
-          break;
+          result = com.jvibe.tool.ToolResult.failure(call.id(), skipReason != null ? skipReason + "; tool not executed" : control.cancelled().get()
+              ? control.reason() + "; tool not executed" : "Max tool iterations exceeded; tool not executed");
+        } else {
+          iterations++;
+          events.add(new AgentEvent(AgentEvent.Type.TOOL_STARTED, call.name()));
+          result = session.toolRegistry().execute(call, new ToolExecutionContext(
+              session.workspace(), control.toolTimeout(), control.cancelled()));
         }
-        iterations++;
-        events.add(new AgentEvent(AgentEvent.Type.TOOL_STARTED, call.name()));
-        var result = session.toolRegistry().execute(call, ToolExecutionContext.defaults(session.workspace()));
         session.conversation().add(new Message(
             Message.Role.TOOL,
             ModelToolResult.encode(result),
@@ -223,13 +248,43 @@ public final class AgentRunner {
             Map.of("success", result.success(), "payload", result.payload()),
             java.time.Instant.now()));
       }
+      if (control.cancelled().get()) complete = true;
+      if (complete && skipReason == null) {
+        events.add(AgentEvent.error(control.cancelled().get() ? control.reason() : "Max tool iterations exceeded"));
+        control.close();
+      }
       pendingToolCalls.clear();
       providerEvents = null;
     }
 
+    private void closeProvider() {
+      control.closeResponse();
+    }
+
+    private void stop() {
+      closeProvider();
+      if (!pendingToolCalls.isEmpty()) executePendingTools();
+      else {
+        finishAssistantMessage();
+        events.add(AgentEvent.error(control.reason()));
+      }
+      complete = true;
+      control.close();
+    }
+
+    private void close() {
+      if (!complete) {
+        closeProvider();
+        control.cancel();
+        stop();
+      }
+      control.close();
+    }
+
     private void finishAssistantMessage() {
-      if (!assistant.isEmpty()) {
-        var metadata = new java.util.LinkedHashMap<String, Object>();
+      if (!assistant.isEmpty() || !assistantMetadata.isEmpty()) {
+        var metadata = new java.util.LinkedHashMap<String, Object>(assistantMetadata);
+        assistantMetadata.clear();
         if (!reasoning.isEmpty()) {
           metadata.put("reasoningContent", reasoning.toString());
           reasoning.setLength(0);

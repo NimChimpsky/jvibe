@@ -1,11 +1,8 @@
 package com.jvibe.gui.ssh;
 
 import com.jvibe.config.ConfigService;
-import com.jvibe.events.AgentEvent;
-import com.jvibe.gui.chat.ChatTranscript;
+import com.jvibe.gui.chat.ChatPromptRunner;
 import com.jvibe.gui.controller.ModelSelectionController;
-import com.jvibe.gui.controller.PromptController;
-import com.jvibe.session.AgentSession;
 import com.jvibe.session.SessionFactory;
 import com.jvibe.ssh.SshAccessMode;
 import com.jvibe.ssh.SshClientService;
@@ -15,15 +12,9 @@ import com.jvibe.ssh.SshCredentialStore;
 import io.avaje.inject.External;
 import jakarta.inject.Singleton;
 import java.awt.BorderLayout;
-import java.awt.Component;
-import java.awt.Dimension;
 import java.awt.Font;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.function.Consumer;
-import java.util.concurrent.atomic.AtomicBoolean;
 import javax.swing.JButton;
-import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
@@ -34,7 +25,6 @@ import javax.swing.JSplitPane;
 import javax.swing.JTable;
 import javax.swing.JTextArea;
 import javax.swing.SwingWorker;
-import javax.swing.UIManager;
 import javax.swing.border.EmptyBorder;
 
 @Singleton
@@ -44,7 +34,7 @@ public final class RemoteSshPanelFactory {
   private final SshClientService sshClient;
   private final SshCredentialStore credentials;
   private final SessionFactory sessionFactory;
-  private final PromptController promptController;
+  private final ChatPromptRunner promptRunner;
   private final ModelSelectionController modelSelectionController;
 
   public RemoteSshPanelFactory(
@@ -53,29 +43,18 @@ public final class RemoteSshPanelFactory {
       @External SshClientService sshClient,
       @External SshCredentialStore credentials,
       @External SessionFactory sessionFactory,
-      PromptController promptController,
+      ChatPromptRunner promptRunner,
       ModelSelectionController modelSelectionController) {
     this.configService = configService;
     this.connections = connections;
     this.sshClient = sshClient;
     this.credentials = credentials;
     this.sessionFactory = sessionFactory;
-    this.promptController = promptController;
+    this.promptRunner = promptRunner;
     this.modelSelectionController = modelSelectionController;
   }
 
   public JComponent create(Consumer<String> log) {
-    var attached = new ArrayList<SshConnection>();
-    var session = sessionFactory.createRemoteSsh(configService.paths().tmp(), () -> List.copyOf(attached));
-    var transcript = new ChatTranscript();
-    var prompt = new JTextArea();
-    prompt.setLineWrap(true);
-    prompt.setWrapStyleWord(true);
-    var attachments = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 6, 0));
-    var modelSelector = new JComboBox<String>();
-    var running = new AtomicBoolean();
-    refreshModels(modelSelector, session);
-
     var connectionModel = new SshConnectionTableModel();
     connectionModel.setConnections(connections.connections());
     var connectionTable = new JTable(connectionModel);
@@ -83,19 +62,12 @@ public final class RemoteSshPanelFactory {
     var keyList = new JTextArea(keysText());
     keyList.setEditable(false);
 
-    new SshMentionController(prompt, connections::connections, connection -> {
-      if (attached.stream().noneMatch(existing -> existing.id().equals(connection.id()))) {
-        attached.add(connection);
-        attachments.add(chip(connection, attached, attachments));
-        attachments.revalidate();
-        attachments.repaint();
-      }
-    });
-
     var management = managementPanel(connectionTable, connectionModel, keyList, log);
-    var chat = chatPanel(transcript, prompt, attachments, modelSelector, session, attached, running, log);
+    var chat = new RemoteSshChatPanel(configService.paths().tmp(), sessionFactory,
+        connections, modelSelectionController, promptRunner, log);
     var split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, management, chat);
     split.setResizeWeight(0.42);
+    com.jvibe.gui.layout.SplitPaneSizing.initialProportion(split, 0.42);
     split.setDividerSize(6);
     split.setBorder(null);
     return split;
@@ -108,13 +80,25 @@ public final class RemoteSshPanelFactory {
       Consumer<String> log) {
     var panel = new JPanel(new BorderLayout(0, 10));
     panel.setBorder(new EmptyBorder(16, 16, 12, 16));
-    panel.add(title("Remote SSH"), BorderLayout.NORTH);
+    panel.add(title("Servers"), BorderLayout.NORTH);
     var actions = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 8, 0));
-    actions.add(button("Import", event -> {
-      var imported = connections.importAll();
-      model.setConnections(imported.connections());
-      keyList.setText(keysText());
-      log.accept("Imported " + imported.connections().size() + " SSH connections");
+    actions.add(button("Import PuTTY", event -> {
+      var button = (JButton) event.getSource();
+      button.setEnabled(false);
+      new SwingWorker<com.jvibe.ssh.SshConnectionConfig, Void>() {
+        @Override protected com.jvibe.ssh.SshConnectionConfig doInBackground() { return connections.importAll(); }
+        @Override protected void done() {
+          button.setEnabled(true);
+          try {
+            var imported = get();
+            model.setConnections(imported.connections());
+            keyList.setText(keysText());
+            log.accept("Imported " + imported.connections().size() + " PuTTY connections");
+          } catch (Exception e) {
+            JOptionPane.showMessageDialog(panel, rootMessage(e), "PuTTY import failed", JOptionPane.ERROR_MESSAGE);
+          }
+        }
+      }.execute();
     }));
     actions.add(button("Add", event -> addConnection(model, keyList)));
     actions.add(button("Edit", event -> editConnection(table, model, keyList)));
@@ -128,149 +112,6 @@ public final class RemoteSshPanelFactory {
     content.setResizeWeight(0.72);
     panel.add(content, BorderLayout.CENTER);
     return panel;
-  }
-
-  private JComponent chatPanel(
-      ChatTranscript transcript,
-      JTextArea prompt,
-      JPanel attachments,
-      JComboBox<String> modelSelector,
-      AgentSession session,
-      List<SshConnection> attached,
-      AtomicBoolean running,
-      Consumer<String> log) {
-    var panel = new JPanel(new BorderLayout(0, 8));
-    panel.setBorder(new EmptyBorder(0, 16, 16, 16));
-    var note = new JLabel("Use @ to attach SSH sessions. Host keys are verified against ~/.ssh/known_hosts.");
-    note.setForeground(UIManager.getColor("Label.disabledForeground"));
-    panel.add(note, BorderLayout.NORTH);
-    panel.add(new JScrollPane(transcript.component()), BorderLayout.CENTER);
-
-    var composer = new JPanel(new BorderLayout(0, 6));
-    attachments.setPreferredSize(new Dimension(0, 28));
-    composer.add(attachments, BorderLayout.NORTH);
-    var inputScroll = new JScrollPane(prompt);
-    inputScroll.setPreferredSize(new Dimension(0, 110));
-    composer.add(inputScroll, BorderLayout.CENTER);
-    var footer = new JPanel(new BorderLayout());
-    footer.add(modelSelector, BorderLayout.WEST);
-    var send = button("Send", event -> send(session, transcript, prompt, attached, modelSelector, running, log));
-    footer.add(send, BorderLayout.EAST);
-    composer.add(footer, BorderLayout.SOUTH);
-    prompt.getInputMap().put(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ENTER, 0), "sendPrompt");
-    prompt.getInputMap().put(
-        javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ENTER, java.awt.event.KeyEvent.SHIFT_DOWN_MASK),
-        "insert-break");
-    prompt.getActionMap().put("sendPrompt", new javax.swing.AbstractAction() {
-      @Override
-      public void actionPerformed(java.awt.event.ActionEvent event) {
-        send(session, transcript, prompt, attached, modelSelector, running, log);
-      }
-    });
-    panel.add(composer, BorderLayout.SOUTH);
-    return panel;
-  }
-
-  private void send(
-      AgentSession session,
-      ChatTranscript transcript,
-      JTextArea prompt,
-      List<SshConnection> attached,
-      JComboBox<String> modelSelector,
-      AtomicBoolean running,
-      Consumer<String> log) {
-    var text = prompt.getText().trim();
-    if (text.isBlank()) {
-      return;
-    }
-    if (!running.compareAndSet(false, true)) {
-      log.accept("A Remote SSH prompt is already running");
-      return;
-    }
-    if (modelSelector.getSelectedItem() == null) {
-      running.set(false);
-      transcript.appendAssistant("Error: No provider model selected. Open Providers and enable a provider.");
-      return;
-    }
-    modelSelectionController.apply(session, (String) modelSelector.getSelectedItem());
-    prompt.setText("");
-    transcript.appendUser(text, List.of());
-    transcript.finishAssistant();
-    new SwingWorker<Void, AgentEvent>() {
-      @Override
-      protected Void doInBackground() {
-        promptController.submit(session, promptWithSessions(text, attached)).forEach(this::publish);
-        return null;
-      }
-
-      @Override
-      protected void process(List<AgentEvent> events) {
-        for (var event : events) {
-          switch (event.type()) {
-            case ASSISTANT_DELTA -> transcript.appendAssistantDelta(event.message());
-            case ERROR -> transcript.appendAssistant("Error: " + event.message());
-            case DONE -> transcript.finishAssistant();
-            case TOOL_STARTED -> log.accept("SSH tool started: " + event.message());
-            case TOOL_FINISHED -> log.accept("SSH tool finished: " + event.message());
-          }
-        }
-      }
-
-      @Override
-      protected void done() {
-        running.set(false);
-        transcript.finishAssistant();
-        try {
-          get();
-        } catch (Exception e) {
-          transcript.appendAssistant("Error: " + rootMessage(e));
-          log.accept("Remote SSH prompt failed: " + rootMessage(e));
-        }
-      }
-    }.execute();
-  }
-
-  private String promptWithSessions(String text, List<SshConnection> attached) {
-    var sessions = new StringBuilder("Attached SSH sessions:\n");
-    for (var connection : attached) {
-      sessions.append("@")
-          .append(connection.name())
-          .append(" sessionId=")
-          .append(connection.id())
-          .append(" host=")
-          .append(connection.host())
-          .append(" user=")
-          .append(connection.user())
-          .append(" accessMode=")
-          .append(connection.accessMode())
-          .append("\n");
-    }
-    return sessions + "\nUser request:\n" + text;
-  }
-
-  private void refreshModels(JComboBox<String> selector, AgentSession session) {
-    selector.removeAllItems();
-    for (var choice : modelSelectionController.choices()) {
-      selector.addItem(choice.display());
-    }
-    if (selector.getItemCount() > 0) {
-      selector.setSelectedIndex(0);
-      modelSelectionController.apply(session, (String) selector.getSelectedItem());
-    }
-  }
-
-  private Component chip(SshConnection connection, List<SshConnection> attached, JPanel container) {
-    var button = new JButton("@" + connection.name() + " x");
-    button.setToolTipText(connection.user() + "@" + connection.host() + ":" + connection.port());
-    button.setMargin(new java.awt.Insets(2, 8, 2, 8));
-    button.setFocusable(false);
-    button.addActionListener(event -> {
-      attached.removeIf(existing -> existing.id().equals(connection.id()));
-      container.remove(button);
-      container.revalidate();
-      container.repaint();
-    });
-    return button;
   }
 
   private void addConnection(SshConnectionTableModel model, JTextArea keyList) {

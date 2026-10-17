@@ -33,10 +33,6 @@ public final class DynamicToolRegistry {
     this(paths.tools(), buildService, gitService);
   }
 
-  DynamicToolRegistry(Path userToolsDir, ToolBuildService buildService) {
-    this(userToolsDir, buildService, new GitService());
-  }
-
   DynamicToolRegistry(Path userToolsDir, ToolBuildService buildService, GitService gitService) {
     this.userToolsDir = userToolsDir;
     this.buildService = buildService;

@@ -26,7 +26,13 @@ public final class SshClientService {
   }
 
   public SshCommandResult execute(SshConnection connection, String command, Duration timeout) throws Exception {
-    return withSession(connection, timeout, session -> execute(session, command, timeout));
+    return execute(connection, command, timeout, new java.util.concurrent.atomic.AtomicBoolean());
+  }
+
+  public SshCommandResult execute(SshConnection connection, String command, Duration timeout,
+      java.util.concurrent.atomic.AtomicBoolean cancelled) throws Exception {
+    checkCancelled(cancelled);
+    return withSession(connection, timeout, session -> execute(session, command, timeout, cancelled));
   }
 
   <T> T withSession(SshConnection connection, Duration timeout, SessionOperation<T> operation) throws Exception {
@@ -51,25 +57,41 @@ public final class SshClientService {
       org.apache.sshd.client.session.ClientSession session,
       String command,
       Duration timeout) throws Exception {
+    return execute(session, command, timeout, new java.util.concurrent.atomic.AtomicBoolean());
+  }
+
+  static SshCommandResult execute(org.apache.sshd.client.session.ClientSession session,
+      String command, Duration timeout, java.util.concurrent.atomic.AtomicBoolean cancelled) throws Exception {
+    checkCancelled(cancelled);
     var stdout = new BoundedOutputStream(MAX_CAPTURE_BYTES);
     var stderr = new BoundedOutputStream(MAX_CAPTURE_BYTES);
     try (var channel = session.createExecChannel(command)) {
       channel.setOut(stdout);
       channel.setErr(stderr);
       channel.open().verify(timeout.toMillis());
-      var events = channel.waitFor(
-          EnumSet.of(ClientChannelEvent.CLOSED, ClientChannelEvent.TIMEOUT),
-          timeout.toMillis());
-      if (events.contains(ClientChannelEvent.TIMEOUT)) {
-        channel.close(true);
-        throw new java.util.concurrent.TimeoutException(
-            "SSH command timed out after " + timeout.toSeconds() + " seconds");
+      var deadline = System.nanoTime() + timeout.toNanos();
+      while (true) {
+        checkCancelled(cancelled);
+        var remaining = deadline - System.nanoTime();
+        if (remaining <= 0) {
+          throw new java.util.concurrent.TimeoutException(
+              "SSH command timed out after " + timeout.toSeconds() + " seconds");
+        }
+        var events = channel.waitFor(EnumSet.of(ClientChannelEvent.CLOSED),
+            Math.max(1, Math.min(100, java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(remaining))));
+        if (events.contains(ClientChannelEvent.CLOSED)) break;
       }
       var exit = channel.getExitStatus();
       return new SshCommandResult(
           exit == null ? -1 : exit,
           stdout.text(),
           stderr.text());
+    }
+  }
+
+  private static void checkCancelled(java.util.concurrent.atomic.AtomicBoolean cancelled) {
+    if (cancelled.get() || Thread.currentThread().isInterrupted()) {
+      throw new java.util.concurrent.CancellationException("SSH command cancelled");
     }
   }
 

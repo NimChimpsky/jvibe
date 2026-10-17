@@ -1,6 +1,7 @@
 package com.jvibe.tool.builtin;
 
 import com.jvibe.workspace.Workspace;
+import com.jvibe.workspace.PathBoundary;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -19,8 +20,8 @@ public interface FileToolAccess {
     return new WorkspaceFileToolAccess();
   }
 
-  static FileToolAccess defaultChat(Path tmp, Supplier<List<Path>> references) {
-    return new DefaultChatFileToolAccess(tmp, references);
+  static FileToolAccess defaultChat(Supplier<List<Path>> references) {
+    return new DefaultChatFileToolAccess(references);
   }
 }
 
@@ -37,11 +38,9 @@ final class WorkspaceFileToolAccess implements FileToolAccess {
 }
 
 final class DefaultChatFileToolAccess implements FileToolAccess {
-  private final Path tmp;
   private final Supplier<List<Path>> references;
 
-  DefaultChatFileToolAccess(Path tmp, Supplier<List<Path>> references) {
-    this.tmp = tmp.toAbsolutePath().normalize();
+  DefaultChatFileToolAccess(Supplier<List<Path>> references) {
     this.references = references;
   }
 
@@ -56,10 +55,6 @@ final class DefaultChatFileToolAccess implements FileToolAccess {
       throw new IllegalArgumentException("Path is not attached to chat: " + raw);
     }
 
-    var tmpCandidate = tmp.resolve(raw).normalize();
-    if (tmpCandidate.startsWith(tmp) && Files.exists(tmpCandidate)) {
-      return tmpCandidate;
-    }
     for (var reference : normalizedReferences()) {
       if (reference.getFileName() != null && reference.getFileName().toString().equals(raw)) {
         return reference;
@@ -67,7 +62,7 @@ final class DefaultChatFileToolAccess implements FileToolAccess {
       if (Files.isDirectory(reference)) {
         var candidate = reference.resolve(raw).normalize();
         if (candidate.startsWith(reference) && Files.exists(candidate)) {
-          return candidate;
+          return PathBoundary.requireInside(reference, candidate);
         }
       }
     }
@@ -76,29 +71,19 @@ final class DefaultChatFileToolAccess implements FileToolAccess {
 
   @Override
   public Path resolveWritable(Workspace workspace, String raw) {
-    var path = Path.of(raw);
-    var resolved = path.isAbsolute() ? path.toAbsolutePath().normalize() : tmp.resolve(path).normalize();
-    if (!resolved.startsWith(tmp)) {
-      throw new IllegalArgumentException("Output path escapes ~/.jvibe/tmp: " + raw);
-    }
-    return resolved;
+    throw new IllegalArgumentException("Chat is read-only; use Build to edit project files");
   }
 
   @Override
   public List<Path> listRoots(Workspace workspace) {
-    var roots = new java.util.ArrayList<Path>();
-    roots.add(tmp);
-    roots.addAll(normalizedReferences());
-    return roots;
+    return normalizedReferences();
   }
 
   private boolean allowedRead(Path path) {
-    if (path.startsWith(tmp)) {
-      return true;
-    }
     for (var reference : normalizedReferences()) {
       if (Files.isDirectory(reference)) {
         if (path.startsWith(reference)) {
+          PathBoundary.requireInside(reference, path);
           return true;
         }
       } else if (path.equals(reference)) {

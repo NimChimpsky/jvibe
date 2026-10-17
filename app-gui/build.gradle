@@ -28,31 +28,6 @@ application {
   applicationDefaultJvmArgs = ['-Dapple.awt.application.name=JVibe']
 }
 
-def agentCliJar = project(':app-cli').tasks.named('jar')
-
-distributions {
-  main {
-    contents {
-      from(agentCliJar) {
-        into 'agent'
-        rename { 'jvibe-cli.jar' }
-      }
-    }
-  }
-}
-
-tasks.named('installDist') {
-  dependsOn agentCliJar
-}
-
-tasks.named('distZip') {
-  dependsOn agentCliJar
-}
-
-tasks.named('distTar') {
-  dependsOn agentCliJar
-}
-
 tasks.named('jar') {
   archiveBaseName = 'jvibe'
   manifest {

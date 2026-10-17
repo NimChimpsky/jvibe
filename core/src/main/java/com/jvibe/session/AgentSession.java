@@ -8,7 +8,8 @@ public final class AgentSession {
   public enum Mode {
     CHAT,
     WORKSPACE,
-    REMOTE_SSH
+    REMOTE_SSH,
+    JDBC
   }
 
   private final String id;

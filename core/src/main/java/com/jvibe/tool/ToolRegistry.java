@@ -37,6 +37,9 @@ public final class ToolRegistry {
     try {
       context.ensureActive();
       return tool.executor().execute(call, context);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      return ToolResult.failure(call.id(), "Tool execution cancelled");
     } catch (Exception e) {
       return ToolResult.failure(call.id(), e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
     }

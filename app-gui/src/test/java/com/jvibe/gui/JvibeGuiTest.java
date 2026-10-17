@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.avaje.inject.BeanScope;
 import java.awt.Component;
 import javax.swing.JComponent;
 import javax.swing.JMenuItem;
@@ -12,9 +13,32 @@ import com.jvibe.gui.chat.DesktopChatController;
 import org.junit.jupiter.api.Test;
 
 class JvibeGuiTest {
+  @org.junit.jupiter.api.io.TempDir java.nio.file.Path home;
+
+  @Test
+  void rootHasExactlyTheFiveProductTabsWithNoOtherFeatures() throws Exception {
+    var paths = com.jvibe.config.JvibePaths.under(home);
+    try (var scope = BeanScope.builder().bean(com.jvibe.config.JvibePaths.class, paths).build()) {
+      javax.swing.SwingUtilities.invokeAndWait(() -> {
+        var root = (javax.swing.JTabbedPane) scope.get(JvibeGui.class).buildRoot();
+        assertEquals(java.util.List.of("Chat", "Build", "Servers", "Databases", "JVibe"),
+            java.util.stream.IntStream.range(0, root.getTabCount()).mapToObj(root::getTitleAt).toList());
+        assertEquals(0, root.getSelectedIndex());
+        assertEquals(javax.swing.JTabbedPane.SCROLL_TAB_LAYOUT, root.getTabLayoutPolicy());
+        root.removeNotify();
+      });
+    }
+  }
+  @Test
+  void applicationGraphIsResolvedByAvajeInject() {
+    try (var scope = BeanScope.builder().build()) {
+      assertNotNull(scope.get(JvibeGui.class));
+    }
+  }
+
   @Test
   void terminalButtonIsIconOnlyWithTooltip() {
-    var button = DesktopChatController.terminalButton(event -> {});
+    var button = com.jvibe.gui.terminal.TerminalToggleButton.create(() -> {}, () -> {});
 
     assertEquals("", button.getText());
     assertEquals("Open terminal", button.getToolTipText());
@@ -23,17 +47,30 @@ class JvibeGuiTest {
 
   @Test
   void composerAndPromptInputHaveFixedHeights() {
-    var composer = DesktopChatController.composerForTest();
+    var composer = new com.jvibe.gui.chat.ChatComposer(() -> {}, () -> {});
 
     assertEquals(DesktopChatController.COMPOSER_HEIGHT, composer.getPreferredSize().height);
     assertEquals(DesktopChatController.COMPOSER_HEIGHT, composer.getMinimumSize().height);
     assertEquals(DesktopChatController.COMPOSER_HEIGHT, composer.getMaximumSize().height);
     assertTrue(hasPromptScroll(composer));
+    composer.setSize(600, DesktopChatController.COMPOSER_HEIGHT);
+    layoutChildren(composer);
+    assertEquals(DesktopChatController.PROMPT_INPUT_HEIGHT, promptScroll(composer).getHeight());
+    composer.setSize(900, DesktopChatController.COMPOSER_HEIGHT);
+    layoutChildren(composer);
+    assertEquals(DesktopChatController.PROMPT_INPUT_HEIGHT, promptScroll(composer).getHeight());
+  }
+
+  private static void layoutChildren(Component component) {
+    if (component instanceof java.awt.Container container) {
+      container.doLayout();
+      for (var child : container.getComponents()) layoutChildren(child);
+    }
   }
 
   @Test
   void composerFileReferenceChipsDoNotUsePromptScrollHeader() {
-    var composer = DesktopChatController.composerForTest();
+    var composer = new com.jvibe.gui.chat.ChatComposer(() -> {}, () -> {});
     var scroll = promptScroll(composer);
     var fileReferenceRow = fileReferenceRow(composer);
 
@@ -46,7 +83,7 @@ class JvibeGuiTest {
 
   @Test
   void fileReferenceChipShowsFilenameAndPathTooltip() {
-    var chip = DesktopChatController.fileReferenceChip(java.nio.file.Path.of("/tmp/example.txt"), () -> {});
+    var chip = com.jvibe.gui.chat.ChatComposer.fileReferenceChip(java.nio.file.Path.of("/tmp/example.txt"), () -> {});
 
     assertEquals("example.txt x", chip.getText());
     assertEquals("/tmp/example.txt", chip.getToolTipText());

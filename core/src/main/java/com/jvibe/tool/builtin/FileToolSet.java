@@ -16,11 +16,10 @@ public final class FileToolSet {
         FileWriteTool.registered(access, "Write file", "Write a UTF-8 file inside the workspace."));
   }
 
-  public static List<RegisteredTool> defaultChat(Path tmp, Supplier<List<Path>> references) {
-    var access = FileToolAccess.defaultChat(tmp, references);
+  public static List<RegisteredTool> defaultChat(Supplier<List<Path>> references) {
+    var access = FileToolAccess.defaultChat(references);
     return List.of(
         FileListTool.registered(access),
-        FileReadTool.registered(access),
-        FileWriteTool.registered(access, "Write output file", "Write a UTF-8 output file under JVibe tmp (~/.jvibe/tmp)."));
+        FileReadTool.registered(access));
   }
 }

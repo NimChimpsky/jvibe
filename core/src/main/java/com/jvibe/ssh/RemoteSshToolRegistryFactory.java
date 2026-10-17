@@ -30,6 +30,8 @@ public final class RemoteSshToolRegistryFactory {
     var registry = new ToolRegistry();
     registry.register(new RegisteredTool(definition("ssh_session_list", "List attached SSH sessions", "List SSH sessions attached to this chat.", object()), (call, context) -> {
       var sessions = attachedSessions.get().stream()
+          .map(session -> connections.find(session.id()))
+          .flatMap(java.util.Optional::stream)
           .map(session -> Map.of(
               "sessionId", session.id(),
               "name", session.name(),
@@ -43,38 +45,39 @@ public final class RemoteSshToolRegistryFactory {
         definition("ssh_exec", "Run SSH command", "Run a command on an attached SSH session.", object(Map.of(
             "sessionId", string("Attached SSH session id."),
             "command", string("Remote command to run.")), "sessionId", "command")),
-        (call, context) -> execute(call, attachedSessions.get(), string(call, "command"))));
+        (call, context) -> execute(call, attachedSessions.get(), string(call, "command"), context)));
     registry.register(new RegisteredTool(
         definition("ssh_file_read", "Read remote file", "Read a file from an attached SSH session.", object(Map.of(
             "sessionId", string("Attached SSH session id."),
             "path", string("Remote file path.")), "sessionId", "path")),
-        (call, context) -> execute(call, attachedSessions.get(), "cat " + shellQuote(string(call, "path")))));
+        (call, context) -> execute(call, attachedSessions.get(), "cat -- " + shellQuote(string(call, "path")), context)));
     registry.register(new RegisteredTool(
         definition("ssh_file_list", "List remote files", "List files from a remote directory.", object(Map.of(
             "sessionId", string("Attached SSH session id."),
             "path", string("Remote directory path.")), "sessionId", "path")),
-        (call, context) -> execute(call, attachedSessions.get(), "find " + shellQuote(string(call, "path")) + " -maxdepth 1 -print")));
+        (call, context) -> execute(call, attachedSessions.get(), "find " + shellQuote(findPath(string(call, "path"))) + " -maxdepth 1 -print", context)));
     registry.register(new RegisteredTool(
         definition("ssh_disk_usage", "Remote disk usage", "Show remote disk usage.", object(Map.of(
             "sessionId", string("Attached SSH session id."),
             "path", string("Remote path.")), "sessionId", "path")),
-        (call, context) -> execute(call, attachedSessions.get(), "du -sh " + shellQuote(string(call, "path")))));
+        (call, context) -> execute(call, attachedSessions.get(), "du -sh -- " + shellQuote(string(call, "path")), context)));
     return registry;
   }
 
-  private ToolResult execute(ToolCall call, List<SshConnection> attached, String command) throws Exception {
-    var connection = attached.stream()
-        .filter(session -> session.id().equals(string(call, "sessionId")))
-        .findFirst()
-        .or(() -> connections.find(string(call, "sessionId")).filter(attached::contains))
-        .orElse(null);
+  private ToolResult execute(ToolCall call, List<SshConnection> attached, String command,
+      com.jvibe.tool.ToolExecutionContext context) throws Exception {
+    context.ensureActive();
+    var id = string(call, "sessionId");
+    // Attachments authorize ids, not stale copies of connection credentials or permissions.
+    var connection = attached.stream().anyMatch(session -> session.id().equals(id))
+        ? connections.find(id).orElse(null) : null;
     if (connection == null) {
       return ToolResult.failure(call.id(), "SSH session is not attached to this chat");
     }
     if (connection.accessMode() == SshAccessMode.READ_ONLY && !readOnlyPolicy.isAllowed(command)) {
       return ToolResult.failure(call.id(), "Command blocked by read-only SSH policy");
     }
-    var result = client.execute(connection, command);
+    var result = client.execute(connection, command, context.timeout(), context.cancelled());
     var payload = Map.<String, Object>of(
         "exitCode", result.exitCode(), "stdout", result.stdout(), "stderr", result.stderr());
     var summary = connection.name() + " exited " + result.exitCode();
@@ -114,5 +117,9 @@ public final class RemoteSshToolRegistryFactory {
 
   private static String shellQuote(String value) {
     return "'" + value.replace("'", "'\"'\"'") + "'";
+  }
+
+  private static String findPath(String path) {
+    return path.startsWith("/") || path.startsWith("./") || path.startsWith("../") ? path : "./" + path;
   }
 }

@@ -13,34 +13,24 @@ import java.util.Locale;
 public final class SshImportService {
   private final Path home;
 
-  public SshImportService() {
-    this(Path.of(System.getProperty("user.home")));
+  private final com.jvibe.process.ProcessRunner processes;
+
+  public SshImportService(com.jvibe.process.ProcessRunner processes) {
+    this(Path.of(System.getProperty("user.home")), processes);
   }
 
-  SshImportService(Path home) {
+  SshImportService(Path home, com.jvibe.process.ProcessRunner processes) {
     this.home = home;
+    this.processes = processes;
   }
 
   public SshConnectionConfig importAll() {
     var connections = new LinkedHashMap<String, SshConnection>();
     var keys = new LinkedHashMap<String, SshKeyRef>();
-    importOpenSshConfig().forEach(connection -> connections.putIfAbsent(connection.id(), connection));
     importPuttySessions().forEach(connection -> connections.putIfAbsent(connection.id(), connection));
     discoverKeys(connections.values().stream().map(SshConnection::keyPath).toList())
         .forEach(key -> keys.putIfAbsent(key.id(), key));
     return new SshConnectionConfig(List.copyOf(connections.values()), List.copyOf(keys.values()));
-  }
-
-  public List<SshConnection> importOpenSshConfig() {
-    var config = home.resolve(".ssh").resolve("config");
-    if (Files.notExists(config)) {
-      return List.of();
-    }
-    try {
-      return parseOpenSshConfig(Files.readAllLines(config));
-    } catch (IOException e) {
-      return List.of();
-    }
   }
 
   public List<SshConnection> importPuttySessions() {
@@ -61,38 +51,6 @@ public final class SshImportService {
     }
   }
 
-  static List<SshConnection> parseOpenSshConfig(List<String> lines) {
-    var result = new ArrayList<SshConnection>();
-    var aliases = new ArrayList<String>();
-    var props = new LinkedHashMap<String, String>();
-    for (var raw : lines) {
-      var line = stripComment(raw).trim();
-      if (line.isBlank()) {
-        continue;
-      }
-      var parts = line.split("\\s+", 2);
-      if (parts.length < 2) {
-        continue;
-      }
-      var key = parts[0].toLowerCase(Locale.ROOT);
-      var value = unquote(parts[1].trim());
-      if ("host".equals(key)) {
-        flushOpenSshHost(result, aliases, props);
-        aliases.clear();
-        props.clear();
-        for (var alias : value.split("\\s+")) {
-          if (!alias.contains("*") && !alias.contains("?")) {
-            aliases.add(alias);
-          }
-        }
-      } else if (!aliases.isEmpty()) {
-        props.put(key, value);
-      }
-    }
-    flushOpenSshHost(result, aliases, props);
-    return result;
-  }
-
   static java.util.Optional<SshConnection> parsePuttySession(String name, List<String> lines) {
     var props = new LinkedHashMap<String, String>();
     for (var raw : lines) {
@@ -103,7 +61,7 @@ public final class SshImportService {
       }
     }
     var host = props.getOrDefault("HostName", "");
-    if (host.isBlank()) {
+    if (host.isBlank() || !"ssh".equalsIgnoreCase(props.getOrDefault("Protocol", "ssh"))) {
       return java.util.Optional.empty();
     }
     return java.util.Optional.of(new SshConnection(
@@ -127,15 +85,11 @@ public final class SshImportService {
 
   private List<SshConnection> importWindowsPuttySessions() {
     try {
-      var process = new ProcessBuilder(
-          "reg",
-          "query",
-          "HKCU\\Software\\SimonTatham\\PuTTY\\Sessions",
-          "/s").start();
-      if (!process.waitFor(3, java.util.concurrent.TimeUnit.SECONDS) || process.exitValue() != 0) {
-        return List.of();
-      }
-      return parseWindowsRegistry(new String(process.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
+      var result = processes.run(List.of("reg", "query",
+          "HKCU\\Software\\SimonTatham\\PuTTY\\Sessions", "/s"), home,
+          new byte[0], java.time.Duration.ofSeconds(3), new java.util.concurrent.atomic.AtomicBoolean());
+      if (result.exitCode() != 0) return List.of();
+      return parseWindowsRegistry(result.stdout());
     } catch (Exception e) {
       return List.of();
     }
@@ -182,26 +136,6 @@ public final class SshImportService {
     return paths.values().stream().map(SshKeyRef::of).toList();
   }
 
-  private static void flushOpenSshHost(List<SshConnection> result, List<String> aliases, LinkedHashMap<String, String> props) {
-    for (var alias : aliases) {
-      var host = props.getOrDefault("hostname", alias);
-      result.add(new SshConnection(
-          "",
-          alias,
-          host,
-          props.getOrDefault("user", ""),
-          intValue(props.get("port"), 22),
-          props.getOrDefault("identityfile", ""),
-          SshAccessMode.READ_ONLY,
-          ""));
-    }
-  }
-
-  private static String stripComment(String value) {
-    var index = value.indexOf('#');
-    return index >= 0 ? value.substring(0, index) : value;
-  }
-
   private static String unquote(String value) {
     if (value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"")) {
       return value.substring(1, value.length() - 1);
@@ -211,7 +145,7 @@ public final class SshImportService {
 
   private static int intValue(String value, int fallback) {
     try {
-      return value == null || value.isBlank() ? fallback : Integer.parseInt(value.trim());
+      return value == null || value.isBlank() ? fallback : (value.trim().startsWith("0x") ? Integer.decode(value.trim()) : Integer.parseInt(value.trim()));
     } catch (NumberFormatException e) {
       return fallback;
     }

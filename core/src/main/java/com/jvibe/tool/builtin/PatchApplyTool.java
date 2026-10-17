@@ -5,7 +5,6 @@ import com.jvibe.tool.ToolCall;
 import com.jvibe.tool.ToolDefinition;
 import com.jvibe.tool.ToolExecutionContext;
 import com.jvibe.tool.ToolResult;
-import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -15,7 +14,7 @@ import java.util.Map;
 public final class PatchApplyTool {
   private PatchApplyTool() {}
 
-  public static RegisteredTool registered() {
+  public static RegisteredTool registered(com.jvibe.git.GitService git) {
     return new RegisteredTool(
         new ToolDefinition(
             "file_apply_patch",
@@ -24,10 +23,11 @@ public final class PatchApplyTool {
             ToolSchemas.object(Map.of(
                 "patch", ToolSchemas.string("Unified diff to apply."),
                 "dryRun", ToolSchemas.bool("Validate the patch without writing files.")), "patch")),
-        PatchApplyTool::execute);
+        (call, context) -> execute(call, context, git));
   }
 
-  static ToolResult execute(ToolCall call, ToolExecutionContext context) throws Exception {
+  static ToolResult execute(ToolCall call, ToolExecutionContext context, com.jvibe.git.GitService git) throws Exception {
+    context.ensureActive();
     var patch = ToolArguments.string(call.arguments(), "patch");
     var dryRun = ToolArguments.bool(call.arguments(), "dryRun", false);
     if (patch.isBlank()) {
@@ -37,12 +37,13 @@ public final class PatchApplyTool {
     if (summary.files().isEmpty() || summary.hunks() == 0) {
       return ToolResult.failure(call.id(), "Patch does not look like a unified diff");
     }
-    var check = gitApply(context.workspace().root(), patch, true);
+    var check = gitApply(context, patch, true, git);
     if (check.exitCode() != 0) {
       return ToolResult.failure(call.id(), "Patch dry-run failed: " + check.stderr());
     }
     if (!dryRun) {
-      var apply = gitApply(context.workspace().root(), patch, false);
+      context.ensureActive();
+      var apply = gitApply(context, patch, false, git);
       if (apply.exitCode() != 0) {
         return ToolResult.failure(call.id(), "Patch apply failed: " + apply.stderr());
       }
@@ -84,7 +85,10 @@ public final class PatchApplyTool {
   }
 
   private static String normalisePatchPath(String value) {
-    var path = value.split("\\s+", 2)[0];
+    var path = value.split("\t", 2)[0];
+    if (path.startsWith("\"")) {
+      path = com.jvibe.tool.builtin.PatchPaths.unquote(path);
+    }
     if ("/dev/null".equals(path)) {
       return null;
     }
@@ -100,31 +104,17 @@ public final class PatchApplyTool {
   }
 
   private static void ensureInside(Path workspace, String file) {
-    var resolved = workspace.resolve(file).normalize();
-    if (!resolved.startsWith(workspace)) {
-      throw new IllegalArgumentException("Patch path escapes workspace: " + file);
-    }
+    com.jvibe.workspace.PathBoundary.requireInside(workspace, workspace.resolve(file));
   }
 
-  private static ProcessResult gitApply(Path workspace, String patch, boolean check) throws Exception {
+  private static com.jvibe.git.GitCommandResult gitApply(ToolExecutionContext context,
+      String patch, boolean check, com.jvibe.git.GitService git) throws Exception {
     var command = new ArrayList<String>();
-    command.add("git");
     command.add("apply");
     if (check) {
       command.add("--check");
     }
-    var process = new ProcessBuilder(command)
-        .directory(workspace.toFile())
-        .redirectErrorStream(false)
-        .start();
-    try (var input = process.getOutputStream();
-        var patchInput = new ByteArrayInputStream(patch.getBytes(StandardCharsets.UTF_8))) {
-      patchInput.transferTo(input);
-    }
-    var stdout = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-    var stderr = new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
-    return new ProcessResult(process.waitFor(), stdout, stderr);
+    return git.run(context.workspace().root(), patch.getBytes(StandardCharsets.UTF_8),
+        context.timeout(), context.cancelled(), command.toArray(String[]::new));
   }
-
-  private record ProcessResult(int exitCode, String stdout, String stderr) {}
 }

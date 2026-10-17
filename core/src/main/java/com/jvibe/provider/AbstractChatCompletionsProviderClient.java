@@ -22,7 +22,7 @@ abstract class AbstractChatCompletionsProviderClient implements ProviderClient {
     var settings = request.settings();
     var key = settings.apiKey();
     if (key == null || key.isBlank()) {
-      return Stream.of(new ProviderEvent.Error(apiKeyName() + " is not configured", true));
+      return Stream.of(new ProviderEvent.Error("Add your API key in the JVibe tab or set " + apiKeyName(), true));
     }
     var body = new LinkedHashMap<String, Object>();
     body.put("model", request.model());
@@ -51,6 +51,9 @@ abstract class AbstractChatCompletionsProviderClient implements ProviderClient {
       return models();
     }
     var response = http.get(endpoint(settings, "/models"), authHeaders(key));
+    if (response.statusCode() == 401 || response.statusCode() == 403) {
+      throw new IllegalStateException("JVibe authentication failed. Check your API key.");
+    }
     if (!response.success()) {
       return models();
     }
@@ -92,11 +95,11 @@ abstract class AbstractChatCompletionsProviderClient implements ProviderClient {
       var choice = JsonSupport.map(choiceObject);
       var delta = JsonSupport.map(choice.get("delta"));
       var reasoning = JsonSupport.string(delta.get("reasoning_content"));
-      if (!reasoning.isBlank()) {
+      if (!reasoning.isEmpty()) {
         events.add(new ProviderEvent.ReasoningDelta(reasoning));
       }
       var text = JsonSupport.string(delta.get("content"));
-      if (!text.isBlank()) {
+      if (!text.isEmpty()) {
         events.add(new ProviderEvent.AssistantDelta(text));
       }
       for (var toolObject : JsonSupport.list(delta.get("tool_calls"))) {
@@ -131,7 +134,7 @@ abstract class AbstractChatCompletionsProviderClient implements ProviderClient {
               JsonSupport.parseArguments(JsonSupport.string(function.get("arguments"))))));
         }
       }
-      if (choice.containsKey("finish_reason") && !"tool_calls".equals(choice.get("finish_reason"))) {
+      if (!JsonSupport.string(choice.get("finish_reason")).isBlank()) {
         events.add(new ProviderEvent.Done());
       }
     }
@@ -139,29 +142,17 @@ abstract class AbstractChatCompletionsProviderClient implements ProviderClient {
   }
 
   Stream<ProviderEvent> parseChatSse(Stream<String> lines) {
-    var events = new ArrayList<ProviderEvent>();
     var toolCalls = new LinkedHashMap<String, ToolBuffer>();
-    var rawLines = lines.toList();
-    for (var line : rawLines) {
-      if (!line.startsWith("data:")) {
-        continue;
-      }
-      var data = line.substring(5).trim();
+    return ProviderEventStream.parse(providerId(), lines, data -> {
+      var events = new ArrayList<ProviderEvent>();
       if ("[DONE]".equals(data)) {
         emitBufferedToolCalls(events, toolCalls);
-        if (toolCalls.isEmpty()) {
-          events.add(new ProviderEvent.Done());
-        }
+        events.add(new ProviderEvent.Done());
       } else if (!data.isBlank()) {
         parseStreamingChatData(data, events, toolCalls);
       }
-    }
-    if (events.stream().noneMatch(ProviderEvent.Done.class::isInstance)
-        && events.stream().noneMatch(ProviderEvent.ToolCallRequested.class::isInstance)
-        && events.stream().noneMatch(ProviderEvent.Error.class::isInstance)) {
-      events.add(ProviderStreamErrors.emptyResponse(providerId(), String.join("\n", rawLines)));
-    }
-    return events.stream();
+      return events;
+    });
   }
 
   private void parseStreamingChatData(String data, List<ProviderEvent> events, Map<String, ToolBuffer> toolCalls) {
@@ -175,11 +166,11 @@ abstract class AbstractChatCompletionsProviderClient implements ProviderClient {
       var choice = JsonSupport.map(choiceObject);
       var delta = JsonSupport.map(choice.get("delta"));
       var reasoning = JsonSupport.string(delta.get("reasoning_content"));
-      if (!reasoning.isBlank()) {
+      if (!reasoning.isEmpty()) {
         events.add(new ProviderEvent.ReasoningDelta(reasoning));
       }
       var text = JsonSupport.string(delta.get("content"));
-      if (!text.isBlank()) {
+      if (!text.isEmpty()) {
         events.add(new ProviderEvent.AssistantDelta(text));
       }
       for (var toolObject : JsonSupport.list(delta.get("tool_calls"))) {
@@ -205,6 +196,7 @@ abstract class AbstractChatCompletionsProviderClient implements ProviderClient {
       var finish = JsonSupport.string(choice.get("finish_reason"));
       if ("tool_calls".equals(finish)) {
         emitBufferedToolCalls(events, toolCalls);
+        events.add(new ProviderEvent.Done());
       } else if (!finish.isBlank() && toolCalls.isEmpty()) {
         events.add(new ProviderEvent.Done());
       }

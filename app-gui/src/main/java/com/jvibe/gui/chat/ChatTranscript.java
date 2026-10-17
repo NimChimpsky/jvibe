@@ -25,6 +25,15 @@ public final class ChatTranscript {
   public ChatTranscript() {
     messages.setLayout(new BoxLayout(messages, BoxLayout.Y_AXIS));
     messages.setBorder(new EmptyBorder(12, 12, 12, 12));
+    messages.addComponentListener(new java.awt.event.ComponentAdapter() {
+      @Override public void componentResized(java.awt.event.ComponentEvent event) {
+        for (var component : messages.getComponents()) {
+          if (component instanceof JComponent row && row.getClientProperty("body") instanceof JTextArea body) {
+            fitMessageBody(body);
+          }
+        }
+      }
+    });
   }
 
   public JComponent component() {
@@ -48,7 +57,7 @@ public final class ChatTranscript {
   }
 
   public boolean appendAssistantDelta(String text) {
-    if (text.isBlank()) {
+    if (text.isEmpty()) {
       return false;
     }
     if (activeAssistantMessage == null) {
@@ -100,48 +109,60 @@ public final class ChatTranscript {
     for (var line : body.getText().split("\\R", -1)) {
       contentWidth = Math.max(contentWidth, metrics.stringWidth(line) + 2);
     }
+    var wrapper = (JComponent) body.getClientProperty("messageWrapper");
+    for (var component : wrapper.getComponents()) {
+      if (component instanceof JPanel references) {
+        references.setPreferredSize(null);
+        for (var chip : references.getComponents()) {
+          if (chip instanceof JComponent label) label.setPreferredSize(null);
+        }
+        contentWidth = Math.max(contentWidth, references.getPreferredSize().width);
+      }
+    }
     var transcriptWidth = messages.getWidth();
+    var transcriptInsets = messages.getInsets();
+    var availableWidth = transcriptWidth - transcriptInsets.left - transcriptInsets.right - 16;
     var maxWidth = transcriptWidth > 0
-        ? Math.min(MESSAGE_MAX_WIDTH, Math.max(280, (int) (transcriptWidth * MESSAGE_WIDTH_RATIO)))
+        ? Math.min(MESSAGE_MAX_WIDTH, Math.max(1, (int) (availableWidth * MESSAGE_WIDTH_RATIO)))
         : MESSAGE_MAX_WIDTH;
     var width = Math.min(maxWidth, contentWidth);
     body.setSize(new Dimension(width, Short.MAX_VALUE));
-    var preferred = body.getPreferredSize();
-    var textHeight = Math.max(preferred.height, estimatedTextHeight(body, width));
+    body.setPreferredSize(null);
+    var view = body.getUI().getRootView(body);
+    view.setSize(width, Float.MAX_VALUE);
+    var bodyInsets = body.getInsets();
+    var textHeight = Math.max(metrics.getHeight(), (int) Math.ceil(view.getPreferredSpan(javax.swing.text.View.Y_AXIS)))
+        + bodyInsets.top + bodyInsets.bottom + 2;
     body.setPreferredSize(new Dimension(width, textHeight));
-    if (body.getClientProperty("messageWrapper") instanceof JComponent wrapper) {
-      var wrapperHeight = textHeight + 12 + wrapperExtraHeight(wrapper);
-      wrapper.setPreferredSize(new Dimension(width + 16, wrapperHeight));
-      wrapper.setMaximumSize(new Dimension(width + 16, wrapperHeight));
-      if (wrapper.getParent() instanceof JComponent row) {
-        var insets = row.getInsets();
-        var rowHeight = wrapperHeight + insets.top + insets.bottom;
-        row.setPreferredSize(new Dimension(0, rowHeight));
-        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, rowHeight));
-        row.revalidate();
-      }
+    var wrapperHeight = textHeight + 12 + wrapperExtraHeight(wrapper, width);
+    wrapper.setPreferredSize(new Dimension(width + 16, wrapperHeight));
+    wrapper.setMaximumSize(new Dimension(width + 16, wrapperHeight));
+    if (wrapper.getParent() instanceof JComponent row) {
+      var insets = row.getInsets();
+      var rowHeight = wrapperHeight + insets.top + insets.bottom;
+      row.setPreferredSize(new Dimension(0, rowHeight));
+      row.setMaximumSize(new Dimension(Integer.MAX_VALUE, rowHeight));
+      row.revalidate();
     }
   }
 
-  private int wrapperExtraHeight(JComponent wrapper) {
+  private int wrapperExtraHeight(JComponent wrapper, int width) {
     var extra = 0;
     for (var component : wrapper.getComponents()) {
-      if (!(component instanceof JTextArea)) {
-        extra += component.getPreferredSize().height + 4;
+      if (component instanceof JPanel references) {
+        for (var chip : references.getComponents()) {
+          var preferred = chip.getPreferredSize();
+          ((JComponent) chip).setPreferredSize(new Dimension(Math.min(preferred.width, Math.max(1, width - 8)), preferred.height));
+        }
+        references.setSize(width, Short.MAX_VALUE);
+        references.doLayout();
+        var height = 0;
+        for (var chip : references.getComponents()) height = Math.max(height, chip.getY() + chip.getHeight());
+        references.setPreferredSize(new Dimension(width, height));
+        extra += height;
       }
     }
     return extra;
-  }
-
-  private int estimatedTextHeight(JTextArea body, int width) {
-    var metrics = body.getFontMetrics(body.getFont());
-    var usableWidth = Math.max(1, width - 4);
-    var lines = 0;
-    for (var line : body.getText().split("\\R", -1)) {
-      var lineWidth = Math.max(1, metrics.stringWidth(line));
-      lines += Math.max(1, (int) Math.ceil(lineWidth / (double) usableWidth));
-    }
-    return metrics.getHeight() * lines + 6;
   }
 
   private JComponent historyReferencePanel(List<Path> references) {

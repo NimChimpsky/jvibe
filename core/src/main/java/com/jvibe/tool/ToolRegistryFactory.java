@@ -40,9 +40,10 @@ public final class ToolRegistryFactory {
     return registry;
   }
 
-  public ToolRegistry createDefaultChat(Path tmp, Supplier<List<Path>> references) {
+  public ToolRegistry createDefaultChat(Supplier<List<Path>> references) {
     var registry = new ToolRegistry();
-    FileToolSet.defaultChat(tmp, references).forEach(registry::register);
+    FileToolSet.defaultChat(references).forEach(registry::register);
     return registry;
   }
+
 }

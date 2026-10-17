@@ -1,67 +1,49 @@
 package com.jvibe.gui.controller;
 
-import com.jvibe.provider.ModelDescriptor;
 import com.jvibe.provider.ProviderConfigService;
-import com.jvibe.provider.ProviderRegistry;
+import com.jvibe.provider.JvibeProviderClient;
 import com.jvibe.session.AgentSession;
 import io.avaje.inject.External;
 import jakarta.inject.Singleton;
-import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 
 @Singleton
 public final class ModelSelectionController {
-  private final ProviderConfigService configService;
-  private final ProviderRegistry registry;
+  private final ProviderConfigService config;
+  private final JvibeProviderClient client;
 
-  public ModelSelectionController(
-      @External ProviderConfigService configService,
-      @External ProviderRegistry registry) {
-    this.configService = configService;
-    this.registry = registry;
+  public ModelSelectionController(@External ProviderConfigService config, @External JvibeProviderClient client) {
+    this.config = config;
+    this.client = client;
   }
 
   public List<ModelChoice> choices() {
-    var choices = new ArrayList<ModelChoice>();
-    for (var settings : configService.load().providers()) {
-      if (!settings.enabled()) {
-        continue;
+    var models = new LinkedHashSet<String>();
+    models.add(config.settings("jvibe").selectedModel());
+    client.models().forEach(model -> models.add(model.id()));
+    return models.stream().map(model -> new ModelChoice("jvibe", "JVibe", model)).toList();
+  }
+
+  public void bind(javax.swing.JComboBox<String> selector) {
+    Runnable refresh = () -> {
+      var selected = selector.getSelectedItem();
+      selector.setModel(new javax.swing.DefaultComboBoxModel<>(
+          choices().stream().map(ModelChoice::display).toArray(String[]::new)));
+      if (selected != null && choices().stream().anyMatch(choice -> choice.display().equals(selected))) {
+        selector.setSelectedItem(selected);
       }
-      registry.find(settings.provider()).ifPresent(client -> {
-        var providerName = configService.definition(settings.provider())
-            .map(com.jvibe.provider.ProviderDefinition::displayName)
-            .orElse(settings.provider());
-        var models = new LinkedHashSet<String>();
-        models.add(settings.selectedModel());
-        client.models().stream().map(ModelDescriptor::id).forEach(models::add);
-        models.stream()
-            .map(model -> new ModelChoice(settings.provider(), providerName, model))
-            .forEach(choices::add);
-      });
-    }
-    return choices;
+    };
+    refresh.run();
+    selector.addHierarchyListener(event -> {
+      if ((event.getChangeFlags() & java.awt.event.HierarchyEvent.SHOWING_CHANGED) != 0 && selector.isShowing()) refresh.run();
+    });
   }
 
-  public void apply(AgentSession session, String displayValue) {
-    var selected = choices().stream()
-        .filter(choice -> choice.display().equals(displayValue))
-        .findFirst();
-    if (selected.isPresent()) {
-      session.selectModel(selected.get().provider(), selected.get().model());
-      return;
-    }
-    var slash = displayValue == null ? -1 : displayValue.indexOf('/');
-    if (slash <= 0 || slash == displayValue.length() - 1) {
-      return;
-    }
-    session.selectModel(displayValue.substring(0, slash), displayValue.substring(slash + 1));
+  public void apply(AgentSession session, String value) {
+    choices().stream().filter(choice -> choice.display().equals(value)).findFirst()
+        .ifPresent(choice -> session.selectModel("jvibe", choice.model()));
   }
 
-  public String display(String provider, String model) {
-    var providerName = configService.definition(provider)
-        .map(com.jvibe.provider.ProviderDefinition::displayName)
-        .orElse(provider);
-    return providerName + "/" + model;
-  }
+  public String display(String provider, String model) { return model; }
 }

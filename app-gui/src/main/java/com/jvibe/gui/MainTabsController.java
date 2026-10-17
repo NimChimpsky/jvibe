@@ -20,12 +20,19 @@ public final class MainTabsController {
   }
 
   public ReorderableTabbedPane create(List<MainTab> tabs) {
+    return createPane(tabs);
+  }
+
+  private ReorderableTabbedPane createPane(List<MainTab> tabs) {
     var pane = new ReorderableTabbedPane();
     for (var tab : ordered(tabs, savedOrder())) {
       tab.content().putClientProperty(TAB_ID_PROPERTY, tab.id());
       pane.addTab(tab.title(), tab.content());
     }
     pane.onReordered(() -> saveOrder(pane));
+    if (pane.getTabCount() > 0) {
+      pane.setSelectedIndex(0);
+    }
     return pane;
   }
 

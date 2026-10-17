@@ -12,4 +12,6 @@ public record ThinkingOption(String id, String label, Map<String, Object> parame
   public static ThinkingOption of(String id, String label) {
     return new ThinkingOption(id, label, Map.of());
   }
+
+  @Override public String toString() { return label; }
 }

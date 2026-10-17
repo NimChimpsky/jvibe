@@ -36,7 +36,6 @@ public final class FileLogService {
 
   public String readAll() {
     try {
-      configService.bootstrap();
       var file = logFile();
       return Files.exists(file) ? Files.readString(file) : "";
     } catch (IOException e) {
@@ -53,8 +52,8 @@ public final class FileLogService {
 
   private synchronized void write(String text) {
     try {
-      configService.bootstrap();
-      var file = configService.paths().home().resolve("jvibe.log");
+      var file = logFile();
+      Files.createDirectories(file.getParent());
       Files.writeString(file, text, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
     } catch (IOException ignored) {
       // File logging must never break the GUI.

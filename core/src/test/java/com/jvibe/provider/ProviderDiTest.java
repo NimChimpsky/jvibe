@@ -30,7 +30,7 @@ class ProviderDiTest {
           .map(ProviderClient::providerId)
           .collect(java.util.stream.Collectors.toSet());
 
-      assertTrue(providerIds.containsAll(Set.of("jvibe", "openai", "anthropic", "mistral", "deepseek", "qwen")));
+      org.junit.jupiter.api.Assertions.assertEquals(Set.of("jvibe"), providerIds);
       assertFalse(providerIds.contains("local"));
       assertFalse(providerIds.contains("openrouter"));
     }

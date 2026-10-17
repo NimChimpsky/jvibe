@@ -29,7 +29,7 @@ final class ProviderMessageMapper {
             assistant.put("role", "assistant");
             assistant.put("content", message.content());
             var reasoning = JsonSupport.string(message.metadata().get("reasoningContent"));
-            if ("deepseek".equals(request.provider()) && !reasoning.isBlank()) {
+            if (!reasoning.isBlank()) {
               assistant.put("reasoning_content", reasoning);
             }
             assistant.put("tool_calls", toolCalls.stream().map(call -> Map.of(
@@ -49,7 +49,7 @@ final class ProviderMessageMapper {
             assistant.put("role", "assistant");
             assistant.put("content", message.content());
             var reasoning = JsonSupport.string(message.metadata().get("reasoningContent"));
-            if ("deepseek".equals(request.provider()) && !reasoning.isBlank()) {
+            if (!reasoning.isBlank()) {
               assistant.put("reasoning_content", reasoning);
             }
             messages.add(assistant);
@@ -104,71 +104,6 @@ final class ProviderMessageMapper {
     return messages.size();
   }
 
-  static List<Map<String, Object>> anthropicMessages(ProviderRequest request) {
-    var messages = new ArrayList<Map<String, Object>>();
-    for (var message : request.messages()) {
-      switch (message.role()) {
-        case USER -> messages.add(Map.of("role", "user", "content", message.content()));
-        case ASSISTANT -> {
-          var toolCalls = toolCalls(message);
-          if (!toolCalls.isEmpty()) {
-            var content = new ArrayList<Map<String, Object>>();
-            if (!message.content().isBlank()) {
-              content.add(Map.of("type", "text", "text", message.content()));
-            }
-            content.addAll(toolCalls.stream().map(call -> Map.<String, Object>of(
-                "type", "tool_use",
-                "id", call.get("id"),
-                "name", call.get("name"),
-                "input", call.getOrDefault("arguments", Map.of()))).toList());
-            messages.add(Map.of(
-                "role", "assistant",
-                "content", content));
-          } else if (!message.content().isBlank()) {
-            messages.add(Map.of("role", "assistant", "content", message.content()));
-          }
-        }
-        case TOOL -> messages.add(Map.of(
-            "role", "user",
-            "content", List.of(Map.of(
-                "type", "tool_result",
-                "tool_use_id", message.metadata().getOrDefault("toolCallId", message.createdAt().toString()),
-                "content", message.content()))));
-        case SYSTEM -> {
-          // Anthropic sends system prompt at the top level.
-        }
-      }
-    }
-    return messages;
-  }
-
-  static List<Map<String, Object>> openAiInput(ProviderRequest request) {
-    var input = new ArrayList<Map<String, Object>>();
-    for (var message : request.messages()) {
-      switch (message.role()) {
-        case SYSTEM -> input.add(Map.of("role", "system", "content", message.content()));
-        case USER -> input.add(Map.of("role", "user", "content", message.content()));
-        case ASSISTANT -> {
-          for (var call : toolCalls(message)) {
-            input.add(Map.of(
-                "type", "function_call",
-                "call_id", call.get("id"),
-                "name", call.get("name"),
-                "arguments", JsonSupport.toJson(call.getOrDefault("arguments", Map.of()))));
-          }
-          if (!message.content().isBlank()) {
-            input.add(Map.of("role", "assistant", "content", message.content()));
-          }
-        }
-        case TOOL -> input.add(Map.of(
-            "type", "function_call_output",
-            "call_id", message.metadata().getOrDefault("toolCallId", message.createdAt().toString()),
-            "output", message.content()));
-      }
-    }
-    return input;
-  }
-
   private static List<Map<String, Object>> toolCalls(Message message) {
     var batch = message.metadata().get("toolCalls");
     if (batch instanceof List<?> list) {
@@ -197,20 +132,6 @@ final class ProviderMessageMapper {
     return List.of();
   }
 
-  static List<Map<String, Object>> openAiTools(List<ToolDefinition> definitions) {
-    return definitions.stream()
-        .map(tool -> {
-          Map<String, Object> map = new LinkedHashMap<>();
-          map.put("type", "function");
-          map.put("name", tool.id());
-          map.put("description", tool.description());
-          map.put("parameters", tool.inputSchema());
-          map.put("strict", false);
-          return map;
-        })
-        .toList();
-  }
-
   static List<Map<String, Object>> chatTools(List<ToolDefinition> definitions) {
     return definitions.stream()
         .map(tool -> Map.<String, Object>of(
@@ -222,12 +143,4 @@ final class ProviderMessageMapper {
         .toList();
   }
 
-  static List<Map<String, Object>> anthropicTools(List<ToolDefinition> definitions) {
-    return definitions.stream()
-        .map(tool -> Map.<String, Object>of(
-            "name", tool.id(),
-            "description", tool.description(),
-            "input_schema", tool.inputSchema()))
-        .toList();
-  }
 }

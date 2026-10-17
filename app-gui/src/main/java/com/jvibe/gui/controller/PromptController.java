@@ -16,10 +16,14 @@ public final class PromptController {
   }
 
   public Stream<AgentEvent> submit(AgentSession session, String prompt) {
+    return submit(session, prompt, new com.jvibe.agent.RunControl());
+  }
+
+  public Stream<AgentEvent> submit(AgentSession session, String prompt, com.jvibe.agent.RunControl control) {
     var text = prompt == null ? "" : prompt.trim();
     if (text.isEmpty()) {
       return Stream.empty();
     }
-    return runner.run(session, text);
+    return runner.run(session, text, control);
   }
 }

@@ -8,7 +8,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.attribute.PosixFilePermission;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -35,13 +34,13 @@ public final class ProviderConfigService {
     return Optional.ofNullable(definitions.get(provider));
   }
 
-  public ProvidersConfig load() {
+  public synchronized ProvidersConfig load() {
     bootstrap();
     try {
       var config = JSONB.type(ProvidersConfig.class).fromJson(Files.readString(paths.providers()));
       return mergeDefaults(config);
     } catch (Exception e) {
-      return mergeDefaults(new ProvidersConfig(List.of()));
+      throw new IllegalStateException("Unable to read provider settings: " + paths.providers(), e);
     }
   }
 
@@ -66,26 +65,29 @@ public final class ProviderConfigService {
   }
 
   public void save(ProviderSettings updated) {
+    saveAll(List.of(updated));
+  }
+
+  public synchronized void saveAll(List<ProviderSettings> updates) {
+    for (var updated : updates) {
+      if (!definitions.containsKey(updated.provider())) {
+        throw new IllegalArgumentException("Unknown provider: " + updated.provider());
+      }
+    }
     bootstrap();
     var providers = new LinkedHashMap<String, ProviderSettings>();
     for (var settings : load().providers()) {
       providers.put(settings.provider(), settings);
     }
-    providers.put(updated.provider(), normalise(updated));
-    write(new ProvidersConfig(providers.values().stream().sorted(Comparator.comparing(ProviderSettings::provider)).toList()));
+    updates.forEach(updated -> providers.put(updated.provider(), normalise(updated)));
+    write(new ProvidersConfig(List.copyOf(providers.values())));
   }
 
   public ProviderSettings masked(ProviderSettings settings) {
     return settings.withApiKey(SecretRedactor.redact(settings.apiKey()));
   }
 
-  public String defaultProvider() {
-    return load().providers().stream()
-        .filter(ProviderSettings::enabled)
-        .findFirst()
-        .map(ProviderSettings::provider)
-        .orElse("jvibe");
-  }
+  public String defaultProvider() { return "jvibe"; }
 
   private ProvidersConfig mergeDefaults(ProvidersConfig config) {
     var providers = new LinkedHashMap<String, ProviderSettings>();
@@ -105,10 +107,11 @@ public final class ProviderConfigService {
     if (definition == null) {
       return settings;
     }
-    var baseUrl = blank(settings.baseUrl()) ? definition.baseUrl() : settings.baseUrl();
+    var baseUrl = definition.baseUrl();
     var model = blank(settings.selectedModel()) ? definition.defaultModel() : settings.selectedModel();
-    var thinking = blank(settings.thinking()) ? definition.thinkingOptions().getFirst().id() : settings.thinking();
-    return new ProviderSettings(settings.provider(), baseUrl, settings.apiKey(), model, thinking, settings.enabled());
+    var thinking = definition.thinkingOptions().stream().map(ThinkingOption::id)
+        .filter(id -> id.equals(settings.thinking())).findFirst().orElse("none");
+    return new ProviderSettings(settings.provider(), baseUrl, settings.apiKey(), model, thinking, true);
   }
 
   private ProviderSettings defaultSettings(ProviderDefinition definition) {
@@ -150,37 +153,9 @@ public final class ProviderConfigService {
   }
 
   private static Map<String, ProviderDefinition> defaultDefinitions() {
-    var openAiThinking = List.of(
-        ThinkingOption.of("none", "None"),
-        ThinkingOption.of("low", "Low"),
-        ThinkingOption.of("medium", "Medium"),
-        ThinkingOption.of("high", "High"),
-        ThinkingOption.of("xhigh", "Extra High"));
-    var highOnly = List.of(ThinkingOption.of("none", "None"), ThinkingOption.of("high", "High"));
-    var deepSeek = List.of(
-        ThinkingOption.of("disabled", "Thinking Off"),
-        ThinkingOption.of("high", "Thinking High"),
-        ThinkingOption.of("max", "Thinking Max"));
-    var qwenThinking = List.of(
-        ThinkingOption.of("off", "Off"),
-        ThinkingOption.of("on", "On"));
-    var jvibeThinking = List.of(
-        ThinkingOption.of("none", "None"),
-        ThinkingOption.of("low", "Low"),
-        ThinkingOption.of("medium", "Medium"),
-        ThinkingOption.of("high", "High"));
-
-    var definitions = new LinkedHashMap<String, ProviderDefinition>();
-    definitions.put("jvibe", new ProviderDefinition("jvibe", "JVibe", JvibeProviderClient.BASE_URL, "JVIBE_API_KEY", "jvibe-coder", jvibeThinking));
-    definitions.put("openai", new ProviderDefinition("openai", "OpenAI", "https://api.openai.com/v1", "OPENAI_API_KEY", "gpt-5.4", openAiThinking));
-    definitions.put("anthropic", new ProviderDefinition("anthropic", "Anthropic", "https://api.anthropic.com/v1", "ANTHROPIC_API_KEY", "claude-sonnet-4-20250514", List.of(
-        ThinkingOption.of("off", "Off"),
-        new ThinkingOption("1024", "1K budget", Map.of("budget_tokens", 1024)),
-        new ThinkingOption("4096", "4K budget", Map.of("budget_tokens", 4096)),
-        new ThinkingOption("10000", "10K budget", Map.of("budget_tokens", 10000)))));
-    definitions.put("mistral", new ProviderDefinition("mistral", "Mistral", "https://api.mistral.ai/v1", "MISTRAL_API_KEY", "mistral-large-latest", highOnly));
-    definitions.put("deepseek", new ProviderDefinition("deepseek", "DeepSeek", "https://api.deepseek.com", "DEEPSEEK_API_KEY", "deepseek-v4-flash", deepSeek));
-    definitions.put("qwen", new ProviderDefinition("qwen", "Qwen", QwenProviderClient.INTERNATIONAL_BASE_URL, "DASHSCOPE_API_KEY", "qwen3-coder-plus", qwenThinking));
-    return java.util.Collections.unmodifiableMap(definitions);
+    return Map.of("jvibe", new ProviderDefinition("jvibe", "JVibe",
+        JvibeProviderClient.BASE_URL, "JVIBE_API_KEY", "jvibe-coder",
+        List.of(ThinkingOption.of("none", "None"), ThinkingOption.of("low", "Low"),
+            ThinkingOption.of("medium", "Medium"), ThinkingOption.of("high", "High"))));
   }
 }
