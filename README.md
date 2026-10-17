@@ -10,6 +10,8 @@ repositories, plain-English server administration over SSH, and SQL over JDBC.
 ## Build and run
 
 ```bash
+git clone https://github.com/NimChimpsky/jvibe
+cd jvibe
 ./gradlew jvibe                 # build and launch
 ./gradlew build                 # tests + app-gui/build/libs/jvb.jar
 java -jar app-gui/build/libs/jvb.jar
@@ -20,7 +22,8 @@ On Windows use `.\gradlew.bat`. `jvb.jar` is self-contained; copy it to any mach
 ## First start
 
 JVibe asks for your email. It returns an API key straight away and emails you a link; open it
-and approve the code the app shows, and the key becomes active. The key is stored in
+and approve the code the app shows, and the key becomes active. New accounts start with
+$5 of free credit. The key is stored in
 `~/.jvibe/account.json` (owner-only permissions) and is visible in the JVibe tab and on
 [jvibe.net/account](https://jvibe.net/account), so you can reuse it on other machines.
 `JVIBE_API_KEY` in the environment overrides the stored key.
