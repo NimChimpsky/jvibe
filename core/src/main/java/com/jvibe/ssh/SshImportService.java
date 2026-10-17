@@ -66,12 +66,11 @@ public final class SshImportService {
     }
     return java.util.Optional.of(new SshConnection(
         "",
-        name,
+        decodeSessionName(name),
         host,
         props.getOrDefault("UserName", ""),
         intValue(props.get("PortNumber"), 22),
         props.getOrDefault("PublicKeyFile", ""),
-        SshAccessMode.READ_ONLY,
         ""));
   }
 
@@ -134,6 +133,15 @@ public final class SshImportService {
       }
     }
     return paths.values().stream().map(SshKeyRef::of).toList();
+  }
+
+  /** PuTTY percent-encodes session names, e.g. {@code Prod%20Web%2001}. */
+  private static String decodeSessionName(String name) {
+    try {
+      return java.net.URLDecoder.decode(name.replace("+", "%2B"), java.nio.charset.StandardCharsets.UTF_8);
+    } catch (IllegalArgumentException e) {
+      return name;
+    }
   }
 
   private static String unquote(String value) {

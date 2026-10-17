@@ -1,17 +1,30 @@
 package com.jvibe.session;
 
-import java.time.Instant;
-import java.util.Map;
+import com.jvibe.tool.ToolCall;
+import java.util.List;
 
-public record Message(Role role, String content, Map<String, Object> metadata, Instant createdAt) {
+/** One conversation entry in the OpenAI chat shape the JVibe service accepts. */
+public record Message(Role role, String content, List<ToolCall> toolCalls, String toolCallId) {
   public enum Role {
-    SYSTEM,
     USER,
     ASSISTANT,
     TOOL
   }
 
-  public Message(Role role, String content) {
-    this(role, content, Map.of(), Instant.now());
+  public Message {
+    content = content == null ? "" : content;
+    toolCalls = toolCalls == null ? List.of() : List.copyOf(toolCalls);
+  }
+
+  public static Message user(String content) {
+    return new Message(Role.USER, content, List.of(), null);
+  }
+
+  public static Message assistant(String content, List<ToolCall> toolCalls) {
+    return new Message(Role.ASSISTANT, content, toolCalls, null);
+  }
+
+  public static Message tool(String toolCallId, String content) {
+    return new Message(Role.TOOL, content, List.of(), toolCallId);
   }
 }

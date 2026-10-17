@@ -4,7 +4,7 @@ import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
-/** One run's cancellation, deadline, and currently owned provider response. */
+/** One run's cancellation, deadline, and the currently open JVibe response stream. */
 public final class RunControl implements AutoCloseable {
   private final AtomicBoolean cancelled = new AtomicBoolean();
   private final AtomicReference<AutoCloseable> response = new AtomicReference<>();

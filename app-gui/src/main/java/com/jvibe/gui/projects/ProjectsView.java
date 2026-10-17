@@ -16,10 +16,6 @@ public final class ProjectsView implements AutoCloseable {
     return component;
   }
 
-  public void refreshModelSelectors() {
-    chat.refreshModelSelectors();
-  }
-
   @Override
   public void close() {
     chat.close();

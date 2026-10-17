@@ -1,8 +1,8 @@
 package com.jvibe.tool.builtin;
 
 import com.jvibe.tool.RegisteredTool;
+import com.jvibe.tool.ToolArguments;
 import com.jvibe.tool.ToolCall;
-import com.jvibe.tool.ToolDefinition;
 import com.jvibe.tool.ToolExecutionContext;
 import com.jvibe.tool.ToolResult;
 import java.nio.file.Files;
@@ -15,21 +15,8 @@ public final class FileReadTool {
   private static final int MAX_LINES = 5_000;
   private FileReadTool() {}
 
-  public static RegisteredTool registered() {
-    return registered(FileToolAccess.workspace());
-  }
-
   public static RegisteredTool registered(FileToolAccess access) {
-    return new RegisteredTool(
-        new ToolDefinition(
-            "file_read",
-            "Read file",
-            "Read a UTF-8 file inside the workspace.",
-            ToolSchemas.object(Map.of(
-                "path", ToolSchemas.string("Relative file path under the workspace."),
-                "startLine", ToolSchemas.integer("One-based first line to read.", 1, Integer.MAX_VALUE),
-                "maxLines", ToolSchemas.integer("Maximum lines to return.", 1, MAX_LINES)), "path")),
-        (call, context) -> execute(call, context, access));
+    return RegisteredTool.reading("file_read", (call, context) -> execute(call, context, access));
   }
 
   static ToolResult execute(ToolCall call, ToolExecutionContext context, FileToolAccess access) throws Exception {

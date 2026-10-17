@@ -3,55 +3,44 @@ package com.jvibe.session;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.jvibe.config.JvibePaths;
-import com.jvibe.git.GitService;
-import com.jvibe.provider.ProviderConfigService;
-import com.jvibe.tool.ToolRegistryFactory;
-import com.jvibe.tool.builtin.BuiltinToolSet;
-import com.jvibe.tool.dynamic.DynamicToolRegistry;
-import com.jvibe.tool.dynamic.DynamicToolManagementTools;
-import com.jvibe.tool.dynamic.ToolBuildService;
-import com.jvibe.workspace.Workspace;
+import com.jvibe.jdbc.JdbcConnectionConfig;
+import com.jvibe.ssh.SshConnection;
+import io.avaje.inject.BeanScope;
+import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class SessionFactoryTest {
-  @TempDir java.nio.file.Path home;
+  @TempDir Path repository;
 
   @Test
-  void createsWorkspaceSessionsWithWorkspaceMode() {
-    var factory = factory();
+  void eachTabGetsItsModeToolsAndContext() {
+    try (var scope = BeanScope.builder().build()) {
+      var sessions = scope.get(SessionFactory.class);
 
-    var session = factory.create(new Workspace(home));
+      var chat = sessions.chat(() -> List.of(Path.of("/tmp/notes.md")));
+      assertEquals(Mode.CHAT, chat.mode());
+      assertTrue(chat.toolRegistry().find("file_read").isPresent());
+      assertTrue(chat.toolRegistry().find("file_write").isEmpty());
+      assertTrue(chat.context().contains("/tmp/notes.md"));
 
-    assertEquals(AgentSession.Mode.WORKSPACE, session.mode());
-  }
+      var build = sessions.build(repository);
+      assertEquals(Mode.BUILD, build.mode());
+      assertTrue(build.toolRegistry().find("git_commit").orElseThrow().changesState());
+      assertTrue(build.context().contains(repository.toString()));
 
-  @Test
-  void createsDefaultChatSessionsWithChatMode() {
-    var factory = factory();
+      var server = new SshConnection("web01", "web01", "web01.example.com", "ops", 22, "", "");
+      var servers = sessions.servers(() -> List.of(server));
+      assertEquals(Mode.SERVERS, servers.mode());
+      assertTrue(servers.toolRegistry().find("ssh_exec").isPresent());
+      assertTrue(servers.context().contains("serverId=web01"));
 
-    var session = factory.createDefaultChat(home.resolve("tmp"), List::of);
-
-    assertEquals(AgentSession.Mode.CHAT, session.mode());
-  }
-
-  @Test
-  void createsJdbcSessionsWithoutTools() {
-    var session = factory().createJdbc(home.resolve("tmp"));
-
-    assertEquals(AgentSession.Mode.JDBC, session.mode());
-    assertTrue(session.toolRegistry().definitions().isEmpty());
-  }
-
-  private SessionFactory factory() {
-    var paths = JvibePaths.under(home);
-    var dynamicTools = new DynamicToolRegistry(paths, new ToolBuildService(), new GitService(new com.jvibe.process.ProcessRunner()));
-    var toolFactory = new ToolRegistryFactory(
-        new BuiltinToolSet(List.of(com.jvibe.tool.builtin.FileReadTool.registered(), com.jvibe.tool.builtin.FileWriteTool.registered())),
-        dynamicTools,
-        new DynamicToolManagementTools(paths, dynamicTools));
-    return new SessionFactory(toolFactory, new ProviderConfigService(paths));
+      var database = JdbcConnectionConfig.create("orders", "jdbc:h2:mem:orders", "sa", "", "");
+      var databases = sessions.databases(() -> List.of(database));
+      assertEquals(Mode.DATABASES, databases.mode());
+      assertTrue(databases.toolRegistry().find("sql_schema").isPresent());
+      assertTrue(databases.context().contains("jdbc:h2:mem:orders"));
+    }
   }
 }

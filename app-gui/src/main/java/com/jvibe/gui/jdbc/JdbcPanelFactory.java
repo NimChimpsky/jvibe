@@ -1,63 +1,89 @@
 package com.jvibe.gui.jdbc;
 
-import com.jvibe.config.ConfigService;
-import com.jvibe.gui.controller.ModelSelectionController;
+import com.jvibe.events.AgentEvent;
+import com.jvibe.gui.chat.AttachmentChatPanel;
+import com.jvibe.gui.chat.ChatCallbacks;
+import com.jvibe.gui.chat.ChatPromptRunner;
+import com.jvibe.gui.layout.SplitPaneSizing;
+import com.jvibe.jdbc.JdbcConnectionConfig;
 import com.jvibe.jdbc.JdbcConnectionRepository;
 import com.jvibe.jdbc.JdbcCredentialStore;
 import com.jvibe.jdbc.JdbcDatabaseService;
+import com.jvibe.jdbc.JdbcQueryResult;
 import com.jvibe.session.SessionFactory;
 import io.avaje.inject.External;
 import jakarta.inject.Singleton;
-import java.util.function.Consumer;
+import java.util.Arrays;
+import java.util.List;
 import javax.swing.JComponent;
 import javax.swing.JSplitPane;
 
+/** Databases tab: saved JDBC connections, a conversation over attached ones, and a results table. */
 @Singleton
 public final class JdbcPanelFactory {
   private final JdbcConnectionRepository repository;
   private final JdbcCredentialStore credentials;
   private final JdbcDatabaseService database;
   private final SessionFactory sessions;
-  private final JdbcSqlGenerationService sqlGeneration;
-  private final ModelSelectionController modelSelection;
-  private final ConfigService configService;
+  private final ChatPromptRunner runner;
 
   public JdbcPanelFactory(
       @External JdbcConnectionRepository repository,
       @External JdbcCredentialStore credentials,
       @External JdbcDatabaseService database,
       @External SessionFactory sessions,
-      JdbcSqlGenerationService sqlGeneration,
-      ModelSelectionController modelSelection,
-      @External ConfigService configService) {
+      ChatPromptRunner runner) {
     this.repository = repository;
     this.credentials = credentials;
     this.database = database;
     this.sessions = sessions;
-    this.sqlGeneration = sqlGeneration;
-    this.modelSelection = modelSelection;
-    this.configService = configService;
+    this.runner = runner;
   }
 
-  public JComponent create(Consumer<String> log) {
-    var workbench = new JdbcWorkbenchPanel(
-        database, credentials, sessions, sqlGeneration, modelSelection, configService, log);
-    var admin = new JdbcAdminPanel(database, credentials, log);
-    var connections = new JdbcConnectionSidebar(repository, credentials, database, selected -> {
-      workbench.setConnection(selected);
-      admin.setConnection(selected);
-    }, log);
+  public JComponent create(ChatCallbacks callbacks) {
+    var results = new JdbcResultsPanel();
+    var chatCallbacks = new ChatCallbacks() {
+      @Override public void log(String level, String message) { callbacks.log(level, message); }
+      @Override public void toolFinished(AgentEvent event) {
+        if (event.data().get("display") instanceof JdbcQueryResult result) results.show(result);
+      }
+    };
+    var chat = new AttachmentChatPanel<>(
+        new AttachmentChatPanel.Attachables<>(
+            "Type @ to attach a connection, then ask in plain English. Example: @orders top 10 customers by revenue this year",
+            repository::connections,
+            JdbcConnectionConfig::id,
+            JdbcConnectionConfig::name,
+            JdbcConnectionConfig::jdbcUrl),
+        sessions::databases,
+        this::unlock,
+        runner,
+        chatCallbacks);
+    var sidebar = new JdbcConnectionSidebar(repository, credentials, database, chat::attach,
+        message -> callbacks.log("INFO", message));
 
-    var workAndAdmin = split(workbench, admin, 0.70);
-    return split(connections, workAndAdmin, 0.20);
+    var chatAndResults = new JSplitPane(JSplitPane.VERTICAL_SPLIT, chat, results);
+    configure(chatAndResults, 0.65);
+    var root = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, sidebar, chatAndResults);
+    configure(root, 0.2);
+    return root;
   }
 
-  private static JSplitPane split(JComponent left, JComponent right, double weight) {
-    var split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, left, right);
+  /** Prompts once per connection for its password; stored passwords stay in memory only. */
+  private boolean unlock(List<JdbcConnectionConfig> attached) {
+    for (var connection : attached) {
+      var password = JdbcPasswordPrompter.password(null, connection, credentials);
+      if (password == null) return false;
+      Arrays.fill(password, '\0');
+    }
+    return true;
+  }
+
+  private static void configure(JSplitPane split, double weight) {
     split.setResizeWeight(weight);
+    SplitPaneSizing.initialProportion(split, weight);
     split.setContinuousLayout(true);
     split.setDividerSize(6);
     split.setBorder(null);
-    return split;
   }
 }

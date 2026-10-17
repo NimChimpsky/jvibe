@@ -1,77 +1,68 @@
 package com.jvibe.session;
 
-import com.jvibe.provider.ProviderConfigService;
-import com.jvibe.ssh.RemoteSshToolRegistryFactory;
+import com.jvibe.config.ConfigService;
+import com.jvibe.jdbc.JdbcConnectionConfig;
+import com.jvibe.jdbc.JdbcToolSet;
 import com.jvibe.ssh.SshConnection;
-import com.jvibe.tool.ToolRegistryFactory;
-import com.jvibe.tool.ToolRegistry;
+import com.jvibe.ssh.SshToolSet;
+import com.jvibe.tool.builtin.FileToolSet;
 import com.jvibe.workspace.Workspace;
-import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
 import java.util.function.Supplier;
 
+/** Creates a session per tab with that tab's tools and request context. */
 @Singleton
 public final class SessionFactory {
-  private final ToolRegistryFactory toolRegistryFactory;
-  private final ProviderConfigService providerConfigService;
-  private final RemoteSshToolRegistryFactory remoteSshTools;
+  private final ConfigService config;
+  private final FileToolSet fileTools;
+  private final SshToolSet sshTools;
+  private final JdbcToolSet jdbcTools;
 
-  @Inject
-  public SessionFactory(
-      ToolRegistryFactory toolRegistryFactory,
-      ProviderConfigService providerConfigService,
-      RemoteSshToolRegistryFactory remoteSshTools) {
-    this.toolRegistryFactory = toolRegistryFactory;
-    this.providerConfigService = providerConfigService;
-    this.remoteSshTools = remoteSshTools;
+  public SessionFactory(ConfigService config, FileToolSet fileTools, SshToolSet sshTools, JdbcToolSet jdbcTools) {
+    this.config = config;
+    this.fileTools = fileTools;
+    this.sshTools = sshTools;
+    this.jdbcTools = jdbcTools;
   }
 
-  SessionFactory(ToolRegistryFactory toolRegistryFactory, ProviderConfigService providerConfigService) {
-    this(toolRegistryFactory, providerConfigService, null);
+  /** Chat reads only the attached files and folders. */
+  public AgentSession chat(Supplier<List<Path>> attachments) {
+    return new AgentSession(Mode.CHAT, scratch(), FileToolSet.chat(attachments), () -> {
+      var paths = attachments.get();
+      if (paths.isEmpty()) return "";
+      var text = new StringBuilder("Attached files and folders (read-only):\n");
+      paths.forEach(path -> text.append("- ").append(path).append('\n'));
+      return text.toString();
+    });
   }
 
-  public AgentSession create(Path workspaceRoot) {
-    return create(new Workspace(workspaceRoot));
+  public AgentSession build(Path repository) {
+    var workspace = new Workspace(repository);
+    var context = "Repository root: " + workspace.root() + "\n"
+        + "Operating system: " + System.getProperty("os.name") + " " + System.getProperty("os.arch") + "\n"
+        + "Shell for shell_run: " + (isWindows() ? "PowerShell" : "/bin/sh") + "\n"
+        + "Client JDK: " + Runtime.version() + "\n";
+    return new AgentSession(Mode.BUILD, workspace, fileTools.build(), () -> context);
   }
 
-  public AgentSession create(Workspace workspace) {
-    var session = new AgentSession(workspace, toolRegistryFactory.create(workspace), AgentSession.Mode.WORKSPACE);
-    var settings = providerConfigService.settings(providerConfigService.defaultProvider());
-    session.selectModel(settings.provider(), settings.selectedModel());
-    return session;
+  public AgentSession servers(Supplier<List<SshConnection>> attached) {
+    return new AgentSession(Mode.SERVERS, scratch(), sshTools.registry(attached),
+        () -> SshToolSet.context(attached.get()));
   }
 
-  public AgentSession createDefaultChat(Path tmp, Supplier<List<Path>> references) {
-    var workspace = new Workspace(tmp);
-    var session = new AgentSession(workspace, toolRegistryFactory.createDefaultChat(references), AgentSession.Mode.CHAT);
-    var settings = providerConfigService.settings(providerConfigService.defaultProvider());
-    session.selectModel(settings.provider(), settings.selectedModel());
-    return session;
+  public AgentSession databases(Supplier<List<JdbcConnectionConfig>> attached) {
+    return new AgentSession(Mode.DATABASES, scratch(), jdbcTools.registry(attached),
+        () -> JdbcToolSet.context(attached.get()));
   }
 
-  public AgentSession createRemoteSsh(Path tmp, Supplier<List<SshConnection>> attachedSessions) {
-    var workspace = new Workspace(tmp);
-    if (remoteSshTools == null) {
-      throw new IllegalStateException("Remote SSH tools are not configured");
-    }
-    var registry = remoteSshTools.create(attachedSessions);
-    var session = new AgentSession(workspace, registry, AgentSession.Mode.REMOTE_SSH);
-    var settings = providerConfigService.settings(providerConfigService.defaultProvider());
-    session.selectModel(settings.provider(), settings.selectedModel());
-    return session;
+  private Workspace scratch() {
+    return new Workspace(config.paths().tmp());
   }
 
-  public AgentSession createJdbc(Path tmp) {
-    return toolFree(tmp, AgentSession.Mode.JDBC);
+  private static boolean isWindows() {
+    return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
   }
-
-  private AgentSession toolFree(Path root, AgentSession.Mode mode) {
-    var session = new AgentSession(new Workspace(root), new ToolRegistry(), mode);
-    var settings = providerConfigService.settings(providerConfigService.defaultProvider());
-    session.selectModel(settings.provider(), settings.selectedModel());
-    return session;
-  }
-
 }

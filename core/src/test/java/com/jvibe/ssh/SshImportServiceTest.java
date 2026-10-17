@@ -17,7 +17,8 @@ class SshImportServiceTest {
     assertEquals("server", connection.host());
     assertEquals(2222, connection.port());
     assertEquals("/keys/prod.ppk", connection.keyPath());
-    assertEquals(SshAccessMode.READ_ONLY, connection.accessMode());
+    assertEquals("Prod Web 01", SshImportService.parsePuttySession("Prod%20Web%2001", List.of("HostName=h"))
+        .orElseThrow().name());
     assertTrue(SshImportService.parsePuttySession("telnet", List.of("HostName=server", "Protocol=telnet")).isEmpty());
   }
 

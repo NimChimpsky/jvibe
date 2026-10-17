@@ -20,7 +20,7 @@ public interface FileToolAccess {
     return new WorkspaceFileToolAccess();
   }
 
-  static FileToolAccess defaultChat(Supplier<List<Path>> references) {
+  static FileToolAccess attachments(Supplier<List<Path>> references) {
     return new DefaultChatFileToolAccess(references);
   }
 }

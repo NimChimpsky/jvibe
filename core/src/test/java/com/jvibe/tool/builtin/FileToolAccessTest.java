@@ -50,17 +50,7 @@ class FileToolAccessTest {
     assertFalse(escaped.success());
   }
 
-  @Test
-  void defaultChatDoesNotExposeMutationToolsOutsideTmp() {
-    var registry = registry(temp.resolve("tmp"), List::of);
-    var ids = registry.definitions().stream().map(definition -> definition.id()).toList();
-
-    assertEquals(List.of("file_list", "file_read"), ids);
-  }
-
   private static com.jvibe.tool.ToolRegistry registry(Path tmp, java.util.function.Supplier<List<Path>> refs) {
-    var registry = new com.jvibe.tool.ToolRegistry();
-    FileToolSet.defaultChat(refs).forEach(registry::register);
-    return registry;
+    return FileToolSet.chat(refs);
   }
 }

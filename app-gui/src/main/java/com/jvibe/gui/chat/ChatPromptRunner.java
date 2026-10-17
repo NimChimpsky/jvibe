@@ -1,122 +1,107 @@
 package com.jvibe.gui.chat;
 
+import com.jvibe.agent.AgentRunner;
+import com.jvibe.agent.RunControl;
 import com.jvibe.events.AgentEvent;
-import com.jvibe.gui.controller.PromptController;
 import com.jvibe.logging.FileLogService;
 import com.jvibe.session.AgentSession;
 import io.avaje.inject.External;
 import jakarta.inject.Singleton;
 import java.util.List;
+import java.util.Map;
+import javax.swing.JLabel;
 import javax.swing.SwingWorker;
 
-/** Streams one provider run into a transcript without coupling it to tab layout. */
+/** Streams one prompt run into a transcript, off the event thread, for every tab. */
 @Singleton
 public final class ChatPromptRunner {
-  private final PromptController prompts;
+  private final AgentRunner runner;
+  private final ToolApprovalDialog approvals;
   private final FileLogService fileLog;
 
-  public ChatPromptRunner(PromptController prompts, @External FileLogService fileLog) {
-    this.prompts = prompts;
+  public ChatPromptRunner(@External AgentRunner runner, ToolApprovalDialog approvals, @External FileLogService fileLog) {
+    this.runner = runner;
+    this.approvals = approvals;
     this.fileLog = fileLog;
   }
 
-  public com.jvibe.agent.RunControl submit(
+  public RunControl submit(
       AgentSession session,
       ChatTranscript transcript,
       String request,
       Runnable finished,
-      DesktopChatController.Callbacks callbacks) {
-    var run = new RunState();
-    var control = new com.jvibe.agent.RunControl();
-    fileLog.prompt(session.provider(), session.model(), request);
-    callbacks.log("INFO", "Prompt submitted to " + session.provider() + "/" + session.model());
+      ChatCallbacks callbacks) {
+    var control = new RunControl();
+    var state = new RunState();
+    fileLog.prompt(session.mode(), request);
 
     new SwingWorker<Void, AgentEvent>() {
       @Override
       protected Void doInBackground() {
-        try (var events = prompts.submit(session, request, control)) {
+        try (var events = runner.run(session, request, control, approvals)) {
           events.forEach(this::publish);
         } catch (RuntimeException e) {
-          publish(AgentEvent.error(
-              e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
+          publish(AgentEvent.error(e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
         }
         return null;
       }
 
       @Override
       protected void process(List<AgentEvent> events) {
-        events.forEach(event -> handle(session, transcript, run, event, callbacks));
+        events.forEach(event -> handle(event, transcript, state, callbacks));
       }
 
       @Override
       protected void done() {
         control.close();
-        flushAssistantLog(session, run);
+        flushAssistantLog(session, state);
         transcript.finishAssistant();
         finished.run();
-        callbacks.workspaceChanged();
-        try {
-          get();
-        } catch (Exception e) {
-          callbacks.log("ERROR", rootMessage(e));
-        }
       }
     }.execute();
     return control;
   }
 
-  private void handle(
-      AgentSession session,
-      ChatTranscript transcript,
-      RunState run,
-      AgentEvent event,
-      DesktopChatController.Callbacks callbacks) {
+  private void handle(AgentEvent event, ChatTranscript transcript, RunState state, ChatCallbacks callbacks) {
     switch (event.type()) {
       case ASSISTANT_DELTA -> {
-        if (transcript.appendAssistantDelta(event.message())) {
-          run.assistantText.append(event.message());
-          run.assistantChars += event.message().length();
-        }
+        if (transcript.appendAssistantDelta(event.message())) state.assistantText.append(event.message());
       }
-      case TOOL_STARTED -> callbacks.log("INFO", "Tool started: " + event.message());
+      case TOOL_STARTED -> {
+        @SuppressWarnings("unchecked")
+        var arguments = (Map<String, Object>) event.data().getOrDefault("arguments", Map.of());
+        var description = ToolCalls.describe(event.message(), arguments);
+        state.activity = transcript.appendActivity("▸ " + description);
+        state.activity.setToolTipText(ToolCalls.detail(arguments));
+        callbacks.log("INFO", "Tool started: " + description);
+      }
       case TOOL_FINISHED -> {
-        callbacks.log(Boolean.FALSE.equals(event.data().get("success")) ? "WARN" : "INFO", "Tool finished: " + event.message());
-        callbacks.workspaceChanged();
+        var success = !Boolean.FALSE.equals(event.data().get("success"));
+        if (state.activity != null) {
+          state.activity.setText((success ? "✓ " : "✗ ") + state.activity.getText().substring(2));
+          if (!success) state.activity.setToolTipText(event.message());
+          state.activity = null;
+        }
+        callbacks.log(success ? "INFO" : "WARN", "Tool finished: " + event.message());
+        callbacks.toolFinished(event);
       }
       case ERROR -> {
-        flushAssistantLog(session, run);
         transcript.appendAssistant("Error: " + event.message());
         callbacks.log("ERROR", event.message());
       }
-      case DONE -> {
-        flushAssistantLog(session, run);
-        transcript.finishAssistant();
-        callbacks.log(
-            run.assistantChars == 0 ? "WARN" : "INFO",
-            run.assistantChars == 0 ? "Run completed without assistant text" : "Run complete");
-      }
+      case DONE -> transcript.finishAssistant();
     }
   }
 
-  private void flushAssistantLog(
-      AgentSession session,
-      RunState run) {
-    if (!run.assistantText.isEmpty()) {
-      fileLog.assistant(session.provider(), session.model(), run.assistantText.toString());
-      run.assistantText.setLength(0);
+  private void flushAssistantLog(AgentSession session, RunState state) {
+    if (!state.assistantText.isEmpty()) {
+      fileLog.assistant(session.mode(), state.assistantText.toString());
+      state.assistantText.setLength(0);
     }
-  }
-
-  private static String rootMessage(Exception exception) {
-    var cause = exception;
-    while (cause.getCause() instanceof Exception nested) {
-      cause = nested;
-    }
-    return cause.getMessage() == null ? cause.getClass().getSimpleName() : cause.getMessage();
   }
 
   private static final class RunState {
     private final StringBuilder assistantText = new StringBuilder();
-    private int assistantChars;
+    private JLabel activity;
   }
 }

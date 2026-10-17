@@ -11,7 +11,6 @@ public record SshConnection(
     String user,
     int port,
     String keyPath,
-    SshAccessMode accessMode,
     String lastTestResult) {
   public SshConnection {
     name = blank(name) ? host : name;
@@ -19,17 +18,17 @@ public record SshConnection(
     user = user == null ? "" : user;
     port = port <= 0 ? 22 : port;
     keyPath = keyPath == null ? "" : keyPath;
-    accessMode = accessMode == null ? SshAccessMode.READ_ONLY : accessMode;
     lastTestResult = lastTestResult == null ? "" : lastTestResult;
     id = blank(id) ? stableId(name, host, user, port) : id;
   }
 
   public SshConnection withLastTestResult(String value) {
-    return new SshConnection(id, name, host, user, port, keyPath, accessMode, value);
+    return new SshConnection(id, name, host, user, port, keyPath, value);
   }
 
-  public SshConnection withAccessMode(SshAccessMode value) {
-    return new SshConnection(id, name, host, user, port, keyPath, value, lastTestResult);
+  /** {@code user@host:port} for display and model context. */
+  public String address() {
+    return (user.isBlank() ? "" : user + "@") + host + (port == 22 ? "" : ":" + port);
   }
 
   static String stableId(String name, String host, String user, int port) {

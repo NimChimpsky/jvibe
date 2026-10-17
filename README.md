@@ -1,52 +1,64 @@
 # JVibe
 
-Java-native chat, project development, SSH administration and database work.
+A Java desktop assistant for enterprise Java developers: inline chat, a coding agent for Git
+repositories, plain-English server administration over SSH, and SQL over JDBC.
 
 ## Requirements
 
-Full **JDK 21+** on PATH, on macOS, Linux or Windows. Dynamic Java tools require javac.
+**JDK 21+** on macOS, Linux or Windows.
 
-## Build And Run
-
-macOS/Linux:
+## Build and run
 
 ```bash
-./gradlew jvibe
+./gradlew jvibe                 # build and launch
+./gradlew build                 # tests + app-gui/build/libs/jvb.jar
+java -jar app-gui/build/libs/jvb.jar
 ```
 
-Windows PowerShell:
+On Windows use `.\gradlew.bat`. `jvb.jar` is self-contained; copy it to any machine with JDK 21+.
 
-```powershell
-.\gradlew.bat jvibe
-```
+## First start
 
-Create distributable GUI archives:
-
-```bash
-./gradlew clean build :app-gui:distZip :app-gui:distTar
-```
+JVibe asks for your email. It returns an API key straight away and emails you a link; open it
+and approve the code the app shows, and the key becomes active. The key is stored in
+`~/.jvibe/account.json` (owner-only permissions) and is visible in the JVibe tab and on
+[jvibe.net/account](https://jvibe.net/account), so you can reuse it on other machines.
+`JVIBE_API_KEY` in the environment overrides the stored key.
 
 ## Tabs
 
-- **Chat:** inline answers and read-only file/folder attachments. No file edits, exports, shell or Git access.
-- **Build:** Git projects, coding chat, in-place editing, embedded terminal and Git status/diff. Add an existing Git repository with **+**.
-- **Servers:** import PuTTY sessions, manage SSH keys and connections, and attach hosts with **@** to inspect or administer them. Access mode is per connection; host keys are verified against known_hosts.
-- **Databases:** saved JDBC connections, natural-language SQL generation, editable SQL, explicit execution and query/update results. External JDBC driver jars are supported. Passwords remain in memory.
-- **JVibe:** API key, account credits, model/thinking settings, custom instructions and theme. Theme changes apply immediately.
+- **Chat:** inline answers. Attach files or folders for read-only context; nothing is written.
+- **Build:** one tab per Git project with a coding agent (read, edit, patch, shell, Git), an
+  embedded terminal and a Git status/diff panel. Add repositories with **+**.
+- **Servers:** import PuTTY sessions or add connections, then attach servers with `@name`
+  (or double-click) and describe what you need. JVibe runs the commands over SSH, across
+  several servers at once, and shows each command inline. Host keys are checked against
+  `~/.ssh/known_hosts`.
+- **Databases:** saved JDBC connections (external driver jars supported). Attach with `@name`
+  (or double-click) and ask in plain English; JVibe inspects the schema, runs SQL and shows the
+  latest result in a table. Passwords stay in memory only.
+- **JVibe:** account and credits, thinking level, tool-call limit, theme, and per-tab custom
+  instructions and **Ask before running** (approve each command, edit or SQL statement).
 
-**JVibe.net is the only supported service.** Register or buy credits at [jvibe.net/account](https://jvibe.net/account). Set the API key in the JVibe tab or through JVIBE_API_KEY. The endpoint is fixed; there is no provider or endpoint selector.
+Tabs can be dragged to reorder. Configuration and logs live in `~/.jvibe`.
 
-Main tabs can be dragged to reorder; startup selects the first tab. Configuration and logs live under ~/.jvibe.
+## How it works
 
-## CLI
+Each tab calls its own endpoint, `POST https://jvibe.net/api/v1/modes/{chat|build|servers|databases}`.
+The service owns the system prompts and tool definitions; the app sends the conversation,
+tool results, the tab's context (attached files, servers or connections) and your custom
+instructions, and executes the tools the model requests locally. See `../jvibe-web/README.md`.
 
-```bash
-./gradlew :app-cli:jar
-java -jar app-cli/build/libs/jvibe-cli-0.1.0-SNAPSHOT.jar run "Inspect this project"
-```
+For local development against a local service: `-Djvibe.apiUrl=http://localhost:3000/api/v1`.
 
-On Windows, use .\gradlew.bat for the build command. The self-contained CLI jar can be copied to another machine with JDK 21+. Run it from the project directory; omit run to start interactive chat. The same JVibe API key configuration applies.
+Tools run with your permissions: Build commands, SSH commands and SQL are not sandboxed.
+Turn on **Ask before running** for tabs where you want to approve every change. Stop cancels the
+model request and cooperative tools; it does not undo completed changes.
 
-Build shells and approved dynamic Java tools are trusted code, not an OS sandbox. Use restricted accounts or containers for untrusted projects. Stop cancels provider requests and cooperative tools; it does not undo completed changes. SSH read-only command checks are conservative, not a remote sandbox.
+## Code layout
 
-Avaje Config, Inject and Jsonb conventions are in .agents/skills/.
+- `core` — `api` (JVibe client, account, streaming), `agent` (run loop), `session`, `tool`
+  (local tool implementations), `ssh`, `jdbc`, `config`
+- `app-gui` — Swing UI (FlatLaf, JediTerm); Avaje Inject wires both modules
+
+Avaje Config, Inject and Jsonb conventions are in `.agents/skills/`.

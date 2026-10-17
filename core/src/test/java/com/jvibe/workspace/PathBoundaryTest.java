@@ -33,12 +33,12 @@ class PathBoundaryTest {
     var secret = Files.writeString(outside.resolve("secret.txt"), "secret");
     link(tmp.resolve("link"), outside);
     link(ref.resolve("link"), outside);
-    var access = FileToolAccess.defaultChat(() -> List.of(ref));
+    var access = FileToolAccess.attachments(() -> List.of(ref));
     var workspace = new Workspace(tmp);
     assertThrows(IllegalArgumentException.class, () -> access.resolveWritable(workspace, "link/new.txt"));
     assertThrows(IllegalArgumentException.class, () -> access.resolveReadable(workspace, "link/secret.txt"));
     assertThrows(IllegalArgumentException.class, () -> access.resolveReadable(workspace, ref.resolve("link/secret.txt").toString()));
-    var direct = FileToolAccess.defaultChat(() -> List.of(secret));
+    var direct = FileToolAccess.attachments(() -> List.of(secret));
     assertEquals(secret, direct.resolveReadable(workspace, secret.toString()));
   }
 

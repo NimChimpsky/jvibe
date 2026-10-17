@@ -23,15 +23,37 @@ class JdbcDatabaseServiceTest {
   }
 
   @Test
-  void exposesSchemaAndAdministrationMetadata() throws Exception {
+  void schemaSummaryFiltersByTablePattern() throws Exception {
     database.execute(connection, new char[0], "CREATE TABLE IF NOT EXISTS audit_log (id BIGINT, message VARCHAR(120))");
+    database.execute(connection, new char[0], "CREATE TABLE IF NOT EXISTS orders (id BIGINT)");
 
-    var schema = database.schemaSummary(connection, new char[0]);
-    var stats = database.adminStats(connection, new char[0]);
+    var all = database.schemaSummary(connection, new char[0], "");
+    var audit = database.schemaSummary(connection, new char[0], "AUDIT%");
 
-    assertTrue(schema.contains("AUDIT_LOG"), schema);
-    assertTrue(schema.contains("MESSAGE"), schema);
-    assertTrue(stats.stream().anyMatch(stat -> stat.name().equals("Database") && stat.value().contains("H2")));
-    assertTrue(stats.stream().anyMatch(stat -> stat.name().equals("Connection valid") && stat.value().equals("true")));
+    assertTrue(all.contains("AUDIT_LOG") && all.contains("ORDERS"), all);
+    assertTrue(audit.contains("MESSAGE"), audit);
+    assertTrue(!audit.contains("ORDERS"), audit);
+    assertTrue(database.schemaSummary(connection, new char[0], "NOPE%").contains("No tables or views match"));
+  }
+
+  @Test
+  void toolSetRunsOnlyOnAttachedConnectionsAndBoundsModelRows() throws Exception {
+    database.execute(connection, new char[0], "CREATE TABLE IF NOT EXISTS numbers (n INTEGER)");
+    database.execute(connection, new char[0], "DELETE FROM numbers");
+    database.execute(connection, new char[0], "INSERT INTO numbers SELECT X FROM SYSTEM_RANGE(1, 80)");
+    var tools = new JdbcToolSet(database, new JdbcCredentialStore());
+    var context = com.jvibe.tool.ToolExecutionContext.defaults(
+        new com.jvibe.workspace.Workspace(java.nio.file.Path.of(System.getProperty("java.io.tmpdir"))));
+
+    var detached = tools.registry(java.util.List::of).execute(new com.jvibe.tool.ToolCall("1", "sql_execute",
+        java.util.Map.of("connectionId", "test", "sql", "SELECT 1")), context);
+    assertTrue(!detached.success());
+
+    var result = tools.registry(() -> java.util.List.of(connection)).execute(new com.jvibe.tool.ToolCall("2",
+        "sql_execute", java.util.Map.of("connectionId", "test", "sql", "SELECT n FROM numbers ORDER BY n")), context);
+    assertTrue(result.success());
+    assertEquals(JdbcToolSet.MODEL_ROWS, ((java.util.List<?>) result.payload().get("rows")).size());
+    assertEquals(true, result.payload().get("truncated"));
+    assertEquals(80, ((JdbcQueryResult) result.display()).rows().size());
   }
 }

@@ -2,76 +2,45 @@ package com.jvibe.session;
 
 import com.jvibe.tool.ToolRegistry;
 import com.jvibe.workspace.Workspace;
-import java.util.UUID;
+import java.util.function.Supplier;
 
+/**
+ * One conversation in one tab: its tools, working directory and the context
+ * (attached files, servers or connections) sent with every request.
+ */
 public final class AgentSession {
-  public enum Mode {
-    CHAT,
-    WORKSPACE,
-    REMOTE_SSH,
-    JDBC
-  }
-
-  private final String id;
-  private final Workspace workspace;
-  private final Conversation conversation;
-  private final ToolRegistry toolRegistry;
   private final Mode mode;
-  private String provider;
-  private String model;
+  private final Workspace workspace;
+  private final ToolRegistry toolRegistry;
+  private final Supplier<String> context;
+  private final Conversation conversation = new Conversation();
 
-  public AgentSession(Workspace workspace, ToolRegistry toolRegistry) {
-    this(UUID.randomUUID().toString(), workspace, toolRegistry, "jvibe", "jvibe-coder", Mode.WORKSPACE);
-  }
-
-  public AgentSession(String id, Workspace workspace, ToolRegistry toolRegistry, String provider, String model) {
-    this(id, workspace, toolRegistry, provider, model, Mode.WORKSPACE);
-  }
-
-  public AgentSession(Workspace workspace, ToolRegistry toolRegistry, Mode mode) {
-    this(UUID.randomUUID().toString(), workspace, toolRegistry, "jvibe", "jvibe-coder", mode);
-  }
-
-  public AgentSession(String id, Workspace workspace, ToolRegistry toolRegistry, String provider, String model, Mode mode) {
-    this.id = id;
+  public AgentSession(Mode mode, Workspace workspace, ToolRegistry toolRegistry, Supplier<String> context) {
+    this.mode = mode;
     this.workspace = workspace;
     this.toolRegistry = toolRegistry;
-    this.mode = mode == null ? Mode.WORKSPACE : mode;
-    this.provider = provider;
-    this.model = model;
-    this.conversation = new Conversation();
-  }
-
-  public String id() {
-    return id;
-  }
-
-  public Workspace workspace() {
-    return workspace;
-  }
-
-  public Conversation conversation() {
-    return conversation;
-  }
-
-  public ToolRegistry toolRegistry() {
-    return toolRegistry;
+    this.context = context;
   }
 
   public Mode mode() {
     return mode;
   }
 
-  public String provider() {
-    return provider;
+  public Workspace workspace() {
+    return workspace;
   }
 
-  public String model() {
-    return model;
+  public ToolRegistry toolRegistry() {
+    return toolRegistry;
   }
 
-  public void selectModel(String provider, String model) {
-    this.provider = provider;
-    this.model = model;
+  public Conversation conversation() {
+    return conversation;
+  }
+
+  /** Current session context; evaluated per request so attachments stay up to date. */
+  public String context() {
+    var value = context.get();
+    return value == null ? "" : value;
   }
 }

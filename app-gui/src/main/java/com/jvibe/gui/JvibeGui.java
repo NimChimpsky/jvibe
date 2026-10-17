@@ -17,6 +17,7 @@ import com.formdev.flatlaf.intellijthemes.FlatSolarizedLightIJTheme;
 import com.formdev.flatlaf.intellijthemes.materialthemeuilite.FlatMTGitHubDarkIJTheme;
 import com.formdev.flatlaf.intellijthemes.materialthemeuilite.FlatMTGitHubIJTheme;
 import com.jvibe.config.ConfigService;
+import com.jvibe.gui.chat.ChatCallbacks;
 import com.jvibe.gui.chat.DesktopChatController;
 import com.jvibe.gui.chat.DesktopChatFactory;
 import com.jvibe.gui.jdbc.JdbcPanelFactory;
@@ -92,25 +93,19 @@ public final class JvibeGui {
     frame.setLocationRelativeTo(null);
     frame.setVisible(true);
     chat.focusPrompt();
+    SwingUtilities.invokeLater(() -> settings.signInIfNeeded(frame.getRootPane()));
   }
 
   JComponent buildRoot() {
-    var callbacks = new DesktopChatController.Callbacks() {
-      @Override public void log(String level, String message) { JvibeGui.this.log.event(level, message); }
-      @Override public void workspaceChanged() {}
-      @Override public void activeSessionChanged() {}
-    };
+    ChatCallbacks callbacks = log::event;
     chat = chats.create(callbacks);
     build = builds.create(Path.of(System.getProperty("user.dir")), callbacks, message -> log.event("INFO", message));
     return mainTabs.create(List.of(
         new MainTabsController.MainTab("chat", "Chat", chat.component()),
         new MainTabsController.MainTab("build", "Build", build.component()),
-        new MainTabsController.MainTab("servers", "Servers", servers.create(message -> log.event("INFO", message))),
-        new MainTabsController.MainTab("databases", "Databases", databases.create(message -> log.event("INFO", message))),
-        new MainTabsController.MainTab("jvibe", "JVibe", settings.create(themeSelector(), () -> {
-          chat.refreshModelSelectors();
-          build.refreshModelSelectors();
-        }))));
+        new MainTabsController.MainTab("servers", "Servers", servers.create(callbacks)),
+        new MainTabsController.MainTab("databases", "Databases", databases.create(callbacks)),
+        new MainTabsController.MainTab("jvibe", "JVibe", settings.create(themeSelector()))));
   }
 
   private JComponent themeSelector() {

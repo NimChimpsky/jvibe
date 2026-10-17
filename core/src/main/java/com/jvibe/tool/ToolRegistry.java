@@ -1,32 +1,27 @@
 package com.jvibe.tool;
 
-import java.util.ArrayList;
-import java.util.Collection;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
 public final class ToolRegistry {
   private final Map<String, RegisteredTool> tools = new LinkedHashMap<>();
 
+  public ToolRegistry(List<RegisteredTool> tools) {
+    tools.forEach(this::register);
+  }
+
+  public ToolRegistry() {
+    this(List.of());
+  }
+
   public void register(RegisteredTool tool) {
-    tools.put(tool.definition().id(), tool);
+    tools.put(tool.name(), tool);
   }
 
-  public void unregister(String id) {
-    tools.remove(id);
-  }
-
-  public Optional<RegisteredTool> find(String id) {
-    return Optional.ofNullable(tools.get(id));
-  }
-
-  public Collection<ToolDefinition> definitions() {
-    var definitions = new ArrayList<ToolDefinition>();
-    for (var tool : tools.values()) {
-      definitions.add(tool.definition());
-    }
-    return definitions;
+  public Optional<RegisteredTool> find(String name) {
+    return Optional.ofNullable(tools.get(name));
   }
 
   public ToolResult execute(ToolCall call, ToolExecutionContext context) {

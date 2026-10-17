@@ -8,7 +8,21 @@ import java.nio.file.StandardCopyOption;
 
 /** Writes small configuration files without exposing partially-written content. */
 public final class AtomicFiles {
+  private static final java.util.Set<java.nio.file.attribute.PosixFilePermission> OWNER_ONLY = java.util.Set.of(
+      java.nio.file.attribute.PosixFilePermission.OWNER_READ,
+      java.nio.file.attribute.PosixFilePermission.OWNER_WRITE);
+
   private AtomicFiles() {}
+
+  /** Writes a file that holds secrets, readable and writable only by the owner where supported. */
+  public static void writePrivate(Path target, String content) throws IOException {
+    writeString(target, content);
+    try {
+      Files.setPosixFilePermissions(target, OWNER_ONLY);
+    } catch (UnsupportedOperationException ignored) {
+      // Windows relies on the user profile ACLs.
+    }
+  }
 
   public static void writeString(Path target, String content) throws IOException {
     var parent = target.toAbsolutePath().normalize().getParent();

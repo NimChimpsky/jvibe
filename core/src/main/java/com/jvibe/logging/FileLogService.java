@@ -1,6 +1,7 @@
 package com.jvibe.logging;
 
 import com.jvibe.config.ConfigService;
+import com.jvibe.session.Mode;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -22,25 +23,16 @@ public final class FileLogService {
     write("%s  %-5s  %s%n".formatted(timestamp(), level, clean(message)));
   }
 
-  public void prompt(String provider, String model, String text) {
-    block("PROMPT " + provider + "/" + model, text);
+  public void prompt(Mode mode, String text) {
+    block("PROMPT " + mode.label(), text);
   }
 
-  public void assistant(String provider, String model, String text) {
-    block("ASSISTANT " + provider + "/" + model, text);
+  public void assistant(Mode mode, String text) {
+    block("ASSISTANT " + mode.label(), text);
   }
 
   public Path logFile() {
-    return configService.paths().home().resolve("jvibe.log");
-  }
-
-  public String readAll() {
-    try {
-      var file = logFile();
-      return Files.exists(file) ? Files.readString(file) : "";
-    } catch (IOException e) {
-      return "Unable to read JVibe log: " + e.getMessage();
-    }
+    return configService.paths().log();
   }
 
   private void block(String title, String text) {

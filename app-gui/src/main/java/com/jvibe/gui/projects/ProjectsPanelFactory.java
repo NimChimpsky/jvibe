@@ -1,7 +1,10 @@
 package com.jvibe.gui.projects;
 
+import com.jvibe.events.AgentEvent;
+import com.jvibe.gui.chat.ChatCallbacks;
 import com.jvibe.gui.chat.DesktopChatController;
 import com.jvibe.gui.chat.DesktopChatFactory;
+import com.jvibe.session.Mode;
 import com.jvibe.project.ProjectRepositoryService;
 import io.avaje.inject.External;
 import jakarta.inject.Singleton;
@@ -25,10 +28,7 @@ public final class ProjectsPanelFactory {
     this.gitPanels = gitPanels;
   }
 
-  public ProjectsView create(
-      Path currentDirectory,
-      DesktopChatController.Callbacks callbacks,
-      Consumer<String> log) {
+  public ProjectsView create(Path currentDirectory, ChatCallbacks callbacks, Consumer<String> log) {
     var roots = loadProjects(currentDirectory, log);
     var initial = roots.isEmpty() ? null : roots.get(0);
     var git = gitPanels.create(log);
@@ -57,26 +57,28 @@ public final class ProjectsPanelFactory {
     return new ProjectsView(root, chat);
   }
 
-  private static final class ProjectCallbacks implements DesktopChatController.Callbacks {
-    private final DesktopChatController.Callbacks delegate;
+  /** Keeps the Git panel on the active project and refreshes it after each tool call. */
+  private static final class ProjectCallbacks implements ChatCallbacks {
+    private final ChatCallbacks delegate;
     private final ProjectGitPanel git;
     private DesktopChatController chat;
 
-    ProjectCallbacks(DesktopChatController.Callbacks delegate, ProjectGitPanel git) {
+    ProjectCallbacks(ChatCallbacks delegate, ProjectGitPanel git) {
       this.delegate = delegate;
       this.git = git;
     }
 
     @Override public void log(String level, String message) { delegate.log(level, message); }
-    @Override public void workspaceChanged() {
-      delegate.workspaceChanged();
+
+    @Override public void toolFinished(AgentEvent event) {
+      delegate.toolFinished(event);
       git.refresh();
     }
+
     @Override public void activeSessionChanged() {
       if (chat != null) {
         var session = chat.activeSession();
-        git.setRepository(session != null && session.mode() == com.jvibe.session.AgentSession.Mode.WORKSPACE
-            ? chat.activeWorkingDirectory() : null);
+        git.setRepository(session != null && session.mode() == Mode.BUILD ? chat.activeWorkingDirectory() : null);
       }
       delegate.activeSessionChanged();
     }

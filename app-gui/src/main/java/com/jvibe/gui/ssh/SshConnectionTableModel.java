@@ -6,7 +6,7 @@ import java.util.List;
 import javax.swing.table.AbstractTableModel;
 
 public final class SshConnectionTableModel extends AbstractTableModel {
-  private static final String[] COLUMNS = {"Name", "Host", "User", "Port", "Key", "Access", "Last test"};
+  private static final String[] COLUMNS = {"Name", "Host", "User", "Port", "Key", "Last test"};
   private final ArrayList<SshConnection> connections = new ArrayList<>();
 
   public void setConnections(List<SshConnection> values) {
@@ -43,8 +43,7 @@ public final class SshConnectionTableModel extends AbstractTableModel {
       case 2 -> connection.user();
       case 3 -> connection.port();
       case 4 -> connection.keyPath();
-      case 5 -> connection.accessMode();
-      case 6 -> connection.lastTestResult();
+      case 5 -> connection.lastTestResult();
       default -> "";
     };
   }

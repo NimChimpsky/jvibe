@@ -1,12 +1,10 @@
 package com.jvibe.gui.ssh;
 
-import com.jvibe.ssh.SshAccessMode;
 import com.jvibe.ssh.SshConnection;
 import java.awt.Component;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
-import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
@@ -23,8 +21,6 @@ final class SshConnectionDialog {
     var user = new JTextField(existing == null ? System.getProperty("user.name", "") : existing.user(), 24);
     var port = new JSpinner(new SpinnerNumberModel(existing == null ? 22 : existing.port(), 1, 65_535, 1));
     var key = new JTextField(existing == null ? "" : existing.keyPath(), 24);
-    var access = new JComboBox<>(SshAccessMode.values());
-    access.setSelectedItem(existing == null ? SshAccessMode.READ_ONLY : existing.accessMode());
 
     var form = new JPanel(new GridBagLayout());
     add(form, 0, "Name", name);
@@ -32,7 +28,6 @@ final class SshConnectionDialog {
     add(form, 2, "User", user);
     add(form, 3, "Port", port);
     add(form, 4, "Private key", key);
-    add(form, 5, "Access", access);
 
     while (true) {
       var result = JOptionPane.showConfirmDialog(
@@ -53,7 +48,6 @@ final class SshConnectionDialog {
         user.getText().trim(),
         ((Number) port.getValue()).intValue(),
         key.getText().trim(),
-        (SshAccessMode) access.getSelectedItem(),
         existing == null ? "" : existing.lastTestResult());
   }
 

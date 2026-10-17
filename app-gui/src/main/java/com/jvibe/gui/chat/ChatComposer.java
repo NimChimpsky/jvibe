@@ -10,9 +10,7 @@ import java.util.List;
 import java.util.function.Consumer;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
-import javax.swing.JComboBox;
 import javax.swing.JComponent;
-import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
@@ -26,18 +24,14 @@ public final class ChatComposer extends JPanel {
   static final int REFERENCE_ROW_HEIGHT = 26;
 
   private final JTextArea prompt = new JTextArea(4, 20);
-  private final JComboBox<String> modelSelector = new JComboBox<>();
   private final JButton send = new JButton("Send");
-  private final JPanel footer = new JPanel(new BorderLayout(10, 0));
+  private final JPanel actions = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 6, 0));
   private final JPanel referencePanel =
       new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 4, 1));
 
-  public ChatComposer(
-      Runnable sendPrompt,
-      Runnable modelSelected) {
+  public ChatComposer(Runnable sendPrompt) {
     super(new BorderLayout(10, 0));
     configurePrompt(sendPrompt);
-    configureModelSelector(modelSelected);
     send.addActionListener(event -> sendPrompt.run());
 
     referencePanel.setOpaque(false);
@@ -64,23 +58,22 @@ public final class ChatComposer extends JPanel {
     return prompt;
   }
 
-  public void onAttach(Runnable action) {
-    var attach = new JButton(javax.swing.UIManager.getIcon("FileView.fileIcon"));
-    attach.setToolTipText("Attach files or folders (read-only)");
-    attach.addActionListener(event -> action.run());
-    var actions = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 0, 0));
-    actions.add(attach);
-    footer.add(actions, BorderLayout.CENTER);
+  /** Adds a small button to the left of the footer, e.g. attach or new conversation. */
+  public JButton addAction(String text, String tooltip, Runnable action) {
+    var button = new JButton(text);
+    button.setToolTipText(tooltip);
+    button.addActionListener(event -> action.run());
+    actions.add(button);
+    return button;
   }
 
-  public JComboBox<String> modelSelector() {
-    return modelSelector;
+  public void onAttach(Runnable action) {
+    addAction("Attach…", "Attach files or folders (read-only)", action);
   }
 
   public void setSending(boolean sending) {
     send.setText(sending ? "Stop" : "Send");
-    send.setToolTipText(sending ? "Stop response" : "Send prompt");
-    modelSelector.setEnabled(!sending);
+    send.setToolTipText(sending ? "Stop response" : "Send (Enter); new line (Shift+Enter)");
   }
 
   public void showContext(List<? extends Component> chips) {
@@ -112,18 +105,12 @@ public final class ChatComposer extends JPanel {
     });
   }
 
-  private void configureModelSelector(Runnable modelSelected) {
-    modelSelector.setPreferredSize(new Dimension(180, modelSelector.getPreferredSize().height));
-    modelSelector.addActionListener(event -> modelSelected.run());
-  }
-
   private JComponent controls() {
-    var modelPanel = new JPanel();
-    modelPanel.add(new JLabel("Model"));
-    modelPanel.add(modelSelector);
-    footer.add(modelPanel, BorderLayout.WEST);
+    var footer = new JPanel(new BorderLayout(10, 0));
+    actions.setOpaque(false);
+    footer.add(actions, BorderLayout.CENTER);
     footer.add(send, BorderLayout.EAST);
-
+    setSending(false);
     return footer;
   }
 

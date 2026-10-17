@@ -47,7 +47,7 @@ class JvibeGuiTest {
 
   @Test
   void composerAndPromptInputHaveFixedHeights() {
-    var composer = new com.jvibe.gui.chat.ChatComposer(() -> {}, () -> {});
+    var composer = new com.jvibe.gui.chat.ChatComposer(() -> {});
 
     assertEquals(DesktopChatController.COMPOSER_HEIGHT, composer.getPreferredSize().height);
     assertEquals(DesktopChatController.COMPOSER_HEIGHT, composer.getMinimumSize().height);
@@ -70,7 +70,7 @@ class JvibeGuiTest {
 
   @Test
   void composerFileReferenceChipsDoNotUsePromptScrollHeader() {
-    var composer = new com.jvibe.gui.chat.ChatComposer(() -> {}, () -> {});
+    var composer = new com.jvibe.gui.chat.ChatComposer(() -> {});
     var scroll = promptScroll(composer);
     var fileReferenceRow = fileReferenceRow(composer);
 

@@ -1,11 +1,11 @@
 plugins {
   id 'application'
+  id 'com.gradleup.shadow' version '9.6.1'
 }
 
 dependencies {
   implementation project(':core')
   implementation "io.avaje:avaje-inject:${avajeInjectVersion}"
-  implementation "io.avaje:avaje-jsonb:${avajeJsonbVersion}"
   implementation "jakarta.annotation:jakarta.annotation-api:${jakartaAnnotationVersion}"
   implementation 'com.formdev:flatlaf:3.7.1'
   implementation 'com.formdev:flatlaf-intellij-themes:3.7.1'
@@ -17,7 +17,6 @@ dependencies {
 }
 
 configurations.configureEach {
-  resolutionStrategy.force 'org.slf4j:slf4j-api:2.0.17'
   resolutionStrategy.force 'org.jetbrains:annotations:24.0.1'
   resolutionStrategy.force 'org.jetbrains.kotlin:kotlin-stdlib:2.1.21'
 }
@@ -28,17 +27,24 @@ application {
   applicationDefaultJvmArgs = ['-Dapple.awt.application.name=JVibe']
 }
 
-tasks.named('jar') {
-  archiveBaseName = 'jvibe'
-  manifest {
-    attributes 'Main-Class': application.mainClass.get()
-  }
+// Runnable fat jar: java -jar app-gui/build/libs/jvb.jar
+tasks.named('shadowJar') {
+  archiveFileName = 'jvb.jar'
+  // avaje-inject and avaje-jsonb discover each module's generated code through ServiceLoader,
+  // so META-INF/services files must be merged; Shadow only merges duplicates it is allowed to see.
+  duplicatesStrategy = DuplicatesStrategy.INCLUDE
+  mergeServiceFiles()
+  exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'
 }
 
-tasks.named('distZip') {
-  archiveFileName = 'jvibe.zip'
+tasks.named('assemble') {
+  dependsOn tasks.named('shadowJar')
 }
 
-tasks.named('distTar') {
-  archiveFileName = 'jvibe.tar'
+tasks.register('jvibe', JavaExec) {
+  group = 'application'
+  description = 'Builds jvb.jar and launches the JVibe desktop app.'
+  classpath = files(tasks.named('shadowJar').flatMap { it.archiveFile })
+  mainClass = application.mainClass
+  jvmArgs application.applicationDefaultJvmArgs
 }

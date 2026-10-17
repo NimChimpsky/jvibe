@@ -1,8 +1,8 @@
 package com.jvibe.tool.builtin;
 
 import com.jvibe.tool.RegisteredTool;
+import com.jvibe.tool.ToolArguments;
 import com.jvibe.tool.ToolCall;
-import com.jvibe.tool.ToolDefinition;
 import com.jvibe.tool.ToolExecutionContext;
 import com.jvibe.tool.ToolResult;
 import java.nio.file.Files;
@@ -15,20 +15,8 @@ public final class FileListTool {
   private static final int MAX_LIMIT = 5_000;
   private FileListTool() {}
 
-  public static RegisteredTool registered() {
-    return registered(FileToolAccess.workspace());
-  }
-
   public static RegisteredTool registered(FileToolAccess access) {
-    return new RegisteredTool(
-        new ToolDefinition(
-            "file_list",
-            "List files",
-            "List files under the workspace. Use path '.' for the workspace root.",
-            ToolSchemas.object(Map.of(
-                "path", ToolSchemas.string("Relative path under the workspace. Defaults to '.'."),
-                "limit", ToolSchemas.integer("Maximum entries to return.", 1, MAX_LIMIT)))),
-        (call, context) -> execute(call, context, access));
+    return RegisteredTool.reading("file_list", (call, context) -> execute(call, context, access));
   }
 
   static ToolResult execute(ToolCall call, ToolExecutionContext context, FileToolAccess access) throws Exception {

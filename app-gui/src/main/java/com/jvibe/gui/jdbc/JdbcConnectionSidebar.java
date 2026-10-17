@@ -24,6 +24,7 @@ final class JdbcConnectionSidebar extends JPanel {
   private final JdbcConnectionRepository repository;
   private final JdbcCredentialStore credentials;
   private final JdbcDatabaseService database;
+  /** Called when the user activates (double-clicks) a connection. */
   private final Consumer<JdbcConnectionConfig> selection;
   private final Consumer<String> log;
   private final DefaultListModel<JdbcConnectionConfig> model = new DefaultListModel<>();
@@ -52,9 +53,12 @@ final class JdbcConnectionSidebar extends JPanel {
     list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
     list.setFixedCellHeight(42);
     list.setCellRenderer(new ConnectionRenderer());
-    list.addListSelectionListener(event -> {
-      if (!event.getValueIsAdjusting()) {
-        selection.accept(list.getSelectedValue());
+    list.setToolTipText("Double-click a connection to attach it to the conversation");
+    list.addMouseListener(new java.awt.event.MouseAdapter() {
+      @Override public void mouseClicked(java.awt.event.MouseEvent event) {
+        if (event.getClickCount() == 2 && list.getSelectedValue() != null) {
+          selection.accept(list.getSelectedValue());
+        }
       }
     });
     add(new JScrollPane(list), BorderLayout.CENTER);
@@ -158,7 +162,6 @@ final class JdbcConnectionSidebar extends JPanel {
     model.clear();
     repository.connections().forEach(model::addElement);
     if (model.isEmpty()) {
-      selection.accept(null);
       return;
     }
     var index = 0;

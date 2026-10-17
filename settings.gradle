@@ -18,5 +18,4 @@ dependencyResolutionManagement {
 rootProject.name = 'jvibe'
 
 include 'core'
-include 'app-cli'
 include 'app-gui'

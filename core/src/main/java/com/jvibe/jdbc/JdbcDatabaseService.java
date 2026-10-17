@@ -68,33 +68,16 @@ public final class JdbcDatabaseService {
     }
   }
 
-  public List<JdbcAdminStat> adminStats(JdbcConnectionConfig config, char[] password) throws Exception {
+  /**
+   * Describes tables and views with their columns. Without a pattern only the connection's
+   * current schema is listed, which keeps vendor system tables out of the summary.
+   */
+  public String schemaSummary(JdbcConnectionConfig config, char[] password, String tablePattern) throws Exception {
     try (var handle = open(config, password)) {
       var connection = handle.connection();
       var metadata = connection.getMetaData();
-      var stats = new ArrayList<JdbcAdminStat>();
-      stats.add(new JdbcAdminStat("Database", metadata.getDatabaseProductName()));
-      stats.add(new JdbcAdminStat("Database version", metadata.getDatabaseProductVersion()));
-      stats.add(new JdbcAdminStat("Driver", metadata.getDriverName() + " " + metadata.getDriverVersion()));
-      stats.add(new JdbcAdminStat("URL", metadata.getURL()));
-      stats.add(new JdbcAdminStat("User", metadata.getUserName()));
-      stats.add(new JdbcAdminStat("Catalog", text(connection.getCatalog())));
-      stats.add(new JdbcAdminStat("Schema", text(currentSchema(connection))));
-      stats.add(new JdbcAdminStat("Read only", Boolean.toString(connection.isReadOnly())));
-      stats.add(new JdbcAdminStat("Auto commit", Boolean.toString(connection.getAutoCommit())));
-      stats.add(new JdbcAdminStat("Transactions", Boolean.toString(metadata.supportsTransactions())));
-      stats.add(new JdbcAdminStat("Isolation", isolation(connection.getTransactionIsolation())));
-      var counts = objectCounts(metadata);
-      stats.add(new JdbcAdminStat("Tables", Integer.toString(counts.tables())));
-      stats.add(new JdbcAdminStat("Views", Integer.toString(counts.views())));
-      stats.add(new JdbcAdminStat("Connection valid", Boolean.toString(connection.isValid(5))));
-      return List.copyOf(stats);
-    }
-  }
-
-  public String schemaSummary(JdbcConnectionConfig config, char[] password) throws Exception {
-    try (var handle = open(config, password)) {
-      var metadata = handle.connection().getMetaData();
+      var pattern = tablePattern == null || tablePattern.isBlank() ? "%" : tablePattern.trim();
+      var schemaFilter = "%".equals(pattern) ? blankToNull(currentSchema(connection)) : null;
       var summary = new StringBuilder();
       summary.append("Database: ")
           .append(metadata.getDatabaseProductName())
@@ -103,7 +86,7 @@ public final class JdbcDatabaseService {
           .append('\n');
       var tables = 0;
       var columns = 0;
-      try (var result = metadata.getTables(handle.connection().getCatalog(), null, "%", new String[] {"TABLE", "VIEW"})) {
+      try (var result = metadata.getTables(connection.getCatalog(), schemaFilter, pattern, new String[] {"TABLE", "VIEW"})) {
         while (result.next() && tables < MAX_SCHEMA_TABLES && columns < MAX_SCHEMA_COLUMNS) {
           tables++;
           var catalog = result.getString("TABLE_CAT");
@@ -126,8 +109,10 @@ public final class JdbcDatabaseService {
           summary.append(")\n");
         }
       }
-      if (tables >= MAX_SCHEMA_TABLES || columns >= MAX_SCHEMA_COLUMNS) {
-        summary.append("[schema summary truncated]\n");
+      if (tables == 0) {
+        summary.append("No tables or views match ").append(pattern).append('\n');
+      } else if (tables >= MAX_SCHEMA_TABLES || columns >= MAX_SCHEMA_COLUMNS) {
+        summary.append("[schema summary truncated; pass a narrower table pattern]\n");
       }
       return summary.toString();
     }
@@ -211,40 +196,18 @@ public final class JdbcDatabaseService {
     return value;
   }
 
-  private static ObjectCounts objectCounts(java.sql.DatabaseMetaData metadata) throws SQLException {
-    var tables = 0;
-    var views = 0;
-    try (var result = metadata.getTables(null, null, "%", new String[] {"TABLE", "VIEW"})) {
-      while (result.next()) {
-        if ("VIEW".equalsIgnoreCase(result.getString("TABLE_TYPE"))) {
-          views++;
-        } else {
-          tables++;
-        }
-      }
-    }
-    return new ObjectCounts(tables, views);
-  }
-
   private static String currentSchema(Connection connection) {
     try {
       return connection.getSchema();
     } catch (SQLFeatureNotSupportedException e) {
       return "";
     } catch (SQLException e) {
-      return "unavailable";
+      return "";
     }
   }
 
-  private static String isolation(int value) {
-    return switch (value) {
-      case Connection.TRANSACTION_NONE -> "None";
-      case Connection.TRANSACTION_READ_UNCOMMITTED -> "Read uncommitted";
-      case Connection.TRANSACTION_READ_COMMITTED -> "Read committed";
-      case Connection.TRANSACTION_REPEATABLE_READ -> "Repeatable read";
-      case Connection.TRANSACTION_SERIALIZABLE -> "Serializable";
-      default -> Integer.toString(value);
-    };
+  private static String blankToNull(String value) {
+    return value == null || value.isBlank() ? null : value;
   }
 
   private static String qualified(String catalog, String schema, String table) {
@@ -258,10 +221,6 @@ public final class JdbcDatabaseService {
     return name.append(table).toString();
   }
 
-  private static String text(String value) {
-    return value == null || value.isBlank() ? "-" : value;
-  }
-
   private static long elapsedMillis(long startedNanos) {
     return Duration.ofNanos(System.nanoTime() - startedNanos).toMillis();
   }
@@ -271,8 +230,6 @@ public final class JdbcDatabaseService {
         ? Path.of(System.getProperty("user.home")).resolve(value.substring(2)).normalize()
         : Path.of(value).toAbsolutePath().normalize();
   }
-
-  private record ObjectCounts(int tables, int views) {}
 
   private record ConnectionHandle(Connection connection, URLClassLoader loader) implements AutoCloseable {
     @Override

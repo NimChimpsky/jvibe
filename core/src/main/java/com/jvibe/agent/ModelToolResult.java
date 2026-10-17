@@ -5,7 +5,7 @@ import io.avaje.jsonb.Json;
 import io.avaje.jsonb.Jsonb;
 import java.util.Map;
 
-/** Complete tool result sent back to providers for the next reasoning turn. */
+/** Tool result as sent back to the model for the next turn. */
 @Json
 record ModelToolResult(boolean success, String summary, Map<String, Object> payload) {
   static String encode(ToolResult result) {

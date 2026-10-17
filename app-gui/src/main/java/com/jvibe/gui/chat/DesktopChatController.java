@@ -1,8 +1,9 @@
 package com.jvibe.gui.chat;
 
+import com.jvibe.agent.RunControl;
 import com.jvibe.config.ConfigService;
-import com.jvibe.gui.controller.ModelSelectionController;
 import com.jvibe.session.AgentSession;
+import com.jvibe.session.Mode;
 import com.jvibe.session.SessionFactory;
 import java.awt.BorderLayout;
 import java.awt.Component;
@@ -30,10 +31,9 @@ public final class DesktopChatController implements AutoCloseable {
   public static final int FILE_REFERENCE_ROW_HEIGHT = ChatComposer.REFERENCE_ROW_HEIGHT;
 
   private final ConfigService config;
-  private final ModelSelectionController models;
   private final ChatPromptRunner promptRunner;
   private final SessionFactory sessions;
-  private final Callbacks callbacks;
+  private final ChatCallbacks callbacks;
   private final JTabbedPane tabs = new JTabbedPane();
   private final Map<Path, TabState> workspaceTabs = new LinkedHashMap<>();
   private TabState active;
@@ -42,14 +42,12 @@ public final class DesktopChatController implements AutoCloseable {
 
   DesktopChatController(
       ConfigService config,
-      ModelSelectionController models,
       ChatPromptRunner promptRunner,
       SessionFactory sessions,
-      Callbacks callbacks,
+      ChatCallbacks callbacks,
       Path initialWorkspace,
       boolean buildOnly) {
     this.config = config;
-    this.models = models;
     this.promptRunner = promptRunner;
     this.sessions = sessions;
     this.callbacks = callbacks;
@@ -66,7 +64,7 @@ public final class DesktopChatController implements AutoCloseable {
     if (!java.nio.file.Files.exists(normalized.resolve(".git"))) {
       throw new IllegalArgumentException("Build requires a Git repository");
     }
-    var state = new TabState(sessions.create(normalized), normalized, new ArrayList<>());
+    var state = new TabState(sessions.build(normalized), normalized, new ArrayList<>());
     workspaceTabs.put(normalized, state);
     addTab(fileName(normalized), normalized.toString(), state);
     return state;
@@ -88,10 +86,6 @@ public final class DesktopChatController implements AutoCloseable {
     if (active != null) {
       SwingUtilities.invokeLater(() -> active.composer.prompt().requestFocusInWindow());
     }
-  }
-
-  public void refreshModelSelectors() {
-    forEachState(this::refreshModels);
   }
 
   public void addFileReference(Path path) {
@@ -116,7 +110,7 @@ public final class DesktopChatController implements AutoCloseable {
       select(existing);
       return;
     }
-    var state = new TabState(sessions.create(normalized), normalized, new ArrayList<>());
+    var state = new TabState(sessions.build(normalized), normalized, new ArrayList<>());
     workspaceTabs.put(normalized, state);
     addTab(fileName(normalized), normalized.toString(), state);
     select(state);
@@ -134,7 +128,7 @@ public final class DesktopChatController implements AutoCloseable {
   private TabState createDefaultChat(boolean select) {
     var references = new ArrayList<Path>();
     var context = new ArrayList<Path>();
-    var session = sessions.createDefaultChat(config.paths().tmp(), () -> List.copyOf(context));
+    var session = sessions.chat(() -> List.copyOf(context));
     var state = new TabState(session, config.paths().tmp(), references);
     state.contextReferences = context;
     var number = ++chatSequence;
@@ -174,10 +168,7 @@ public final class DesktopChatController implements AutoCloseable {
   }
 
   private JComponent buildComposer(TabState state) {
-    state.composer = new ChatComposer(
-        () -> send(state),
-        () -> applyModel(state, !state.refreshingModels));
-    refreshModels(state);
+    state.composer = new ChatComposer(() -> send(state));
     state.composer.onAttach(() -> {
       var chooser = new javax.swing.JFileChooser();
       chooser.setFileSelectionMode(javax.swing.JFileChooser.FILES_AND_DIRECTORIES);
@@ -196,7 +187,7 @@ public final class DesktopChatController implements AutoCloseable {
     var label = new JLabel(title);
     label.setToolTipText(tooltip);
     panel.add(label);
-    if (state.session.mode() == AgentSession.Mode.CHAT) {
+    if (state.session.mode() == Mode.CHAT) {
       panel.add(tabAction("+", "New chat", () -> createDefaultChat(true)));
     }
     var menu = new JPopupMenu();
@@ -230,7 +221,6 @@ public final class DesktopChatController implements AutoCloseable {
     var selected = tabs.getSelectedComponent();
     if (selected instanceof JComponent component && component.getClientProperty("state") instanceof TabState state) {
       active = state;
-      refreshModels(state);
       callbacks.activeSessionChanged();
       focusPrompt();
     } else {
@@ -266,40 +256,6 @@ public final class DesktopChatController implements AutoCloseable {
     }
   }
 
-  private void refreshModels(TabState state) {
-    if (state.composer == null || state.running) return;
-    var selector = state.composer.modelSelector();
-    var current = models.display(state.session.provider(), state.session.model());
-    state.refreshingModels = true;
-    try {
-      selector.removeAllItems();
-      var containsCurrent = false;
-      for (var choice : models.choices()) {
-        selector.addItem(choice.display());
-        containsCurrent |= choice.display().equals(current);
-      }
-      if (containsCurrent) {
-        selector.setSelectedItem(current);
-      } else if (selector.getItemCount() > 0) {
-        selector.setSelectedIndex(0);
-        applyModel(state, false);
-      } else {
-        state.session.selectModel("", "");
-      }
-    } finally {
-      state.refreshingModels = false;
-    }
-  }
-
-  private void applyModel(TabState state, boolean logChange) {
-    var selected = state.composer.modelSelector().getSelectedItem();
-    if (selected == null) return;
-    var value = selected.toString();
-    var previous = models.display(state.session.provider(), state.session.model());
-    models.apply(state.session, value);
-    if (logChange && !value.equals(previous)) callbacks.log("INFO", "Selected model: " + value);
-  }
-
   private void send(TabState state) {
     if (state.running) {
       if (state.runControl != null) state.runControl.cancel();
@@ -307,12 +263,6 @@ public final class DesktopChatController implements AutoCloseable {
     }
     var typed = state.composer.prompt().getText().trim();
     if (typed.isEmpty() && state.references.isEmpty()) return;
-    if (state.composer.modelSelector().getSelectedItem() == null) {
-      var message = "Select a JVibe model in the JVibe tab.";
-      state.transcript.appendAssistant("Error: " + message);
-      callbacks.log("ERROR", message);
-      return;
-    }
     var references = List.copyOf(state.references);
     references.stream().filter(path -> !state.contextReferences.contains(path)).forEach(state.contextReferences::add);
     var request = promptWithReferences(typed, references);
@@ -327,7 +277,6 @@ public final class DesktopChatController implements AutoCloseable {
       state.running = false;
       state.runControl = null;
       state.composer.setSending(false);
-      refreshModels(state);
     }, callbacks);
   }
 
@@ -379,12 +328,6 @@ public final class DesktopChatController implements AutoCloseable {
     }
   }
 
-  public interface Callbacks {
-    void log(String level, String message);
-    default void workspaceChanged() {}
-    default void activeSessionChanged() {}
-  }
-
   private static final class TabState {
     private final AgentSession session;
     private final Path workingDirectory;
@@ -393,9 +336,8 @@ public final class DesktopChatController implements AutoCloseable {
     private ChatTranscript transcript;
     private BuildTerminal terminal;
     private ChatComposer composer;
-    private boolean refreshingModels;
     private boolean running;
-    private com.jvibe.agent.RunControl runControl;
+    private RunControl runControl;
 
     private TabState(AgentSession session, Path workingDirectory, List<Path> references) {
       this.session = session;

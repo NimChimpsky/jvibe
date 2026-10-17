@@ -1,8 +1,8 @@
 package com.jvibe.tool.builtin;
 
 import com.jvibe.tool.RegisteredTool;
+import com.jvibe.tool.ToolArguments;
 import com.jvibe.tool.ToolCall;
-import com.jvibe.tool.ToolDefinition;
 import com.jvibe.tool.ToolExecutionContext;
 import com.jvibe.tool.ToolResult;
 import java.nio.charset.StandardCharsets;
@@ -15,15 +15,7 @@ public final class PatchApplyTool {
   private PatchApplyTool() {}
 
   public static RegisteredTool registered(com.jvibe.git.GitService git) {
-    return new RegisteredTool(
-        new ToolDefinition(
-            "file_apply_patch",
-            "Apply patch",
-            "Apply a unified diff inside the workspace after dry-run validation.",
-            ToolSchemas.object(Map.of(
-                "patch", ToolSchemas.string("Unified diff to apply."),
-                "dryRun", ToolSchemas.bool("Validate the patch without writing files.")), "patch")),
-        (call, context) -> execute(call, context, git));
+    return RegisteredTool.changing("file_apply_patch", (call, context) -> execute(call, context, git));
   }
 
   static ToolResult execute(ToolCall call, ToolExecutionContext context, com.jvibe.git.GitService git) throws Exception {

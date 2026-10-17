@@ -75,6 +75,23 @@ public final class ChatTranscript {
     activeAssistantMessage = null;
   }
 
+  /** A muted one-line row for tool activity; the returned label can be updated when the tool finishes. */
+  public JLabel appendActivity(String text) {
+    finishAssistant();
+    var label = new JLabel(text);
+    label.setForeground(UIManager.getColor("Label.disabledForeground"));
+    label.setFont(new java.awt.Font(java.awt.Font.MONOSPACED, java.awt.Font.PLAIN, label.getFont().getSize() - 1));
+    label.setBorder(new EmptyBorder(2, 8, 2, 8));
+    var row = new JPanel(new BorderLayout());
+    row.setOpaque(false);
+    row.add(label, BorderLayout.WEST);
+    row.setAlignmentX(Component.LEFT_ALIGNMENT);
+    row.setMaximumSize(new Dimension(Integer.MAX_VALUE, label.getPreferredSize().height + 4));
+    messages.add(row);
+    refresh(messages);
+    return label;
+  }
+
   private JComponent messageBubble(String text, boolean user, List<Path> references) {
     var row = new JPanel(new BorderLayout());
     row.setOpaque(false);

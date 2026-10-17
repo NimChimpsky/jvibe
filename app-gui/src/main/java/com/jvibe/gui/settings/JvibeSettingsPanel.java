@@ -1,158 +1,277 @@
 package com.jvibe.gui.settings;
 
+import com.jvibe.api.Account;
+import com.jvibe.api.AccountService;
+import com.jvibe.api.AccountStatus;
+import com.jvibe.api.JvibeClient;
+import com.jvibe.api.Thinking;
 import com.jvibe.config.ConfigService;
-import com.jvibe.gui.controller.ProviderSettingsController;
-import com.jvibe.provider.JvibeProviderClient;
-import com.jvibe.provider.ModelDescriptor;
-import com.jvibe.provider.ProviderSettings;
-import com.jvibe.provider.ThinkingOption;
-import java.awt.*;
+import com.jvibe.config.ModeSettings;
+import com.jvibe.session.Mode;
+import java.awt.BorderLayout;
+import java.awt.Component;
+import java.awt.Desktop;
+import java.awt.FlowLayout;
+import java.awt.Font;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
+import java.awt.Insets;
+import java.awt.Toolkit;
+import java.awt.datatransfer.StringSelection;
+import java.awt.event.HierarchyEvent;
 import java.net.URI;
-import java.util.List;
-import javax.swing.*;
+import java.util.EnumMap;
+import java.util.Map;
+import javax.swing.BorderFactory;
+import javax.swing.JButton;
+import javax.swing.JCheckBox;
+import javax.swing.JComboBox;
+import javax.swing.JComponent;
+import javax.swing.JLabel;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JPasswordField;
+import javax.swing.JScrollPane;
+import javax.swing.JSpinner;
+import javax.swing.JTabbedPane;
+import javax.swing.JTextArea;
+import javax.swing.SpinnerNumberModel;
+import javax.swing.SwingWorker;
+import javax.swing.UIManager;
 
-/** View-owned account draft; no alternative provider or endpoint controls. */
+/** The JVibe tab: account, assistant behaviour, per-tab customisation and appearance. */
 final class JvibeSettingsPanel extends JPanel {
-  private final ConfigService config;
-  private final ProviderSettingsController account;
-  private final Runnable saved;
-  private ProviderSettings stored;
-  private boolean clearKey;
-  private final JPasswordField key = new JPasswordField(32);
-  private final JComboBox<String> model = new JComboBox<>();
-  private final JComboBox<ThinkingOption> thinking = new JComboBox<>();
-  private final JSpinner iterations = new JSpinner(new SpinnerNumberModel(10, 1, 1000, 1));
-  private final JTextArea instructions = new JTextArea(6, 48);
-  private final JLabel credits = new JLabel("Credits: unavailable");
-  private final JLabel status = new JLabel(" ");
+  private static final char ECHO = '•';
 
-  JvibeSettingsPanel(ConfigService config, ProviderSettingsController account, JComponent theme, Runnable saved) {
+  private final ConfigService config;
+  private final AccountService accounts;
+  private final JvibeClient client;
+  private final JLabel status = new JLabel("Checking account…");
+  private final JLabel email = new JLabel();
+  private final JPasswordField apiKey = new JPasswordField(36);
+  private final JComboBox<Thinking> thinking = new JComboBox<>(Thinking.values());
+  private final JSpinner maxToolCalls = new JSpinner(new SpinnerNumberModel(25, 1, 500, 1));
+  private final Map<Mode, JTextArea> instructions = new EnumMap<>(Mode.class);
+  private final Map<Mode, JCheckBox> askBeforeRunning = new EnumMap<>(Mode.class);
+  private final JLabel saveStatus = new JLabel(" ");
+  private int row;
+
+  JvibeSettingsPanel(ConfigService config, AccountService accounts, JvibeClient client, JComponent themeSelector) {
     super(new BorderLayout());
     this.config = config;
-    this.account = account;
-    this.saved = saved;
-    stored = account.settings();
-    model.setEditable(true);
-    model.addItem(stored.selectedModel());
-    thinking.setModel(new DefaultComboBoxModel<>(account.thinkingOptions().toArray(ThinkingOption[]::new)));
-    for (int i = 0; i < thinking.getItemCount(); i++) {
-      if (thinking.getItemAt(i).id().equals(stored.thinking())) thinking.setSelectedIndex(i);
-    }
-    key.putClientProperty("JTextField.placeholderText",
-        stored.apiKey().isBlank() ? "API key or JVIBE_API_KEY" : "Key saved; leave blank to keep");
-    instructions.setLineWrap(true);
-    instructions.setWrapStyleWord(true);
-    try {
-      var settings = config.config();
-      instructions.setText(settings.customInstructions());
-      iterations.setValue(Math.min(1000, settings.maxToolIterations()));
-    } catch (java.io.IOException e) { status.setText(e.getMessage()); }
+    this.accounts = accounts;
+    this.client = client;
 
     var form = new JPanel(new GridBagLayout());
-    form.setBorder(BorderFactory.createEmptyBorder(24, 28, 24, 28));
-    var title = new JLabel("JVibe");
-    title.setFont(title.getFont().deriveFont(Font.BOLD, 22));
-    var heading = new GridBagConstraints();
-    heading.gridx = 0; heading.gridy = 0; heading.gridwidth = 2;
-    heading.anchor = GridBagConstraints.WEST; heading.insets = new Insets(8, 0, 8, 0);
-    form.add(title, heading);
-    row(form, 1, "Account", link("jvibe.net/account", JvibeProviderClient.ACCOUNT_URL));
-    var keyRow = new JPanel(new BorderLayout(8, 0));
-    keyRow.add(key, BorderLayout.CENTER);
-    var clear = new JButton("Clear key");
-    clear.addActionListener(event -> { clearKey = true; key.setText(""); key.putClientProperty("JTextField.placeholderText", "Key will be cleared on Save"); });
-    keyRow.add(clear, BorderLayout.EAST);
-    row(form, 2, "API key", keyRow);
-    row(form, 3, "Model", model);
-    row(form, 4, "Thinking", thinking);
-    var refresh = new JButton("Refresh account");
-    refresh.addActionListener(event -> refresh(refresh));
-    var balance = new JPanel(new BorderLayout(12, 0));
-    balance.add(credits, BorderLayout.CENTER);
-    balance.add(refresh, BorderLayout.EAST);
-    row(form, 5, "", balance);
-    row(form, 6, "Theme", theme);
-    iterations.setPreferredSize(new Dimension(90, iterations.getPreferredSize().height));
-    var limit = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
-    limit.add(iterations);
-    row(form, 7, "Max tool iterations", limit);
-    row(form, 8, "Custom instructions", new JScrollPane(instructions));
+    form.setBorder(BorderFactory.createEmptyBorder(20, 28, 20, 28));
+    heading(form, "Account");
+    field(form, "Status", accountStatusRow());
+    field(form, "Email", email);
+    field(form, "API key", apiKeyRow());
+    field(form, "", accountActions());
+
+    heading(form, "Assistant");
+    field(form, "Thinking", left(thinking));
+    field(form, "Max tool calls per message", left(maxToolCalls));
+
+    heading(form, "Tabs");
+    field(form, "", modeTabs());
+
+    heading(form, "Appearance");
+    field(form, "Theme", left(themeSelector));
+
     var save = new JButton("Save");
     save.addActionListener(event -> save());
     var actions = new JPanel(new BorderLayout(12, 0));
-    actions.add(status, BorderLayout.CENTER);
+    actions.add(saveStatus, BorderLayout.CENTER);
     actions.add(save, BorderLayout.EAST);
-    row(form, 9, "", actions);
-    var links = new JPanel(new FlowLayout(FlowLayout.LEFT, 16, 0));
-    links.add(link("Discord", "https://discord.gg/TN3nWFBf8H"));
-    links.add(link("GitHub", "https://github.com/NimChimpsky/jvibe"));
-    links.add(link("Site", "https://jvibe.net"));
-    row(form, 10, "", links);
+    field(form, "", actions);
+    field(form, "", links());
+
     var wrapper = new JPanel(new BorderLayout());
     wrapper.add(form, BorderLayout.NORTH);
     var scroll = new JScrollPane(wrapper);
     scroll.setBorder(BorderFactory.createEmptyBorder());
+    scroll.getVerticalScrollBar().setUnitIncrement(16);
     add(scroll, BorderLayout.CENTER);
+
+    load();
+    addHierarchyListener(event -> {
+      if ((event.getChangeFlags() & HierarchyEvent.SHOWING_CHANGED) != 0 && isShowing()) refreshStatus();
+    });
   }
 
-  private ProviderSettings draft() {
-    var chars = key.getPassword();
+  private JComponent accountStatusRow() {
+    var refresh = new JButton("Refresh");
+    refresh.addActionListener(event -> refreshStatus());
+    var panel = new JPanel(new BorderLayout(12, 0));
+    panel.add(status, BorderLayout.CENTER);
+    panel.add(refresh, BorderLayout.EAST);
+    return panel;
+  }
+
+  private JComponent apiKeyRow() {
+    apiKey.setEchoChar(ECHO);
+    apiKey.putClientProperty("JTextField.placeholderText", "Sign in, or paste a key from jvibe.net/account");
+    var show = new JButton("Show");
+    show.addActionListener(event -> {
+      var hidden = apiKey.getEchoChar() != 0;
+      apiKey.setEchoChar(hidden ? (char) 0 : ECHO);
+      show.setText(hidden ? "Hide" : "Show");
+    });
+    var copy = new JButton("Copy");
+    copy.addActionListener(event -> {
+      var key = new String(apiKey.getPassword());
+      Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(key), null);
+      saveStatus.setText("API key copied");
+    });
+    var buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+    buttons.add(show);
+    buttons.add(copy);
+    var panel = new JPanel(new BorderLayout(6, 0));
+    panel.add(apiKey, BorderLayout.CENTER);
+    panel.add(buttons, BorderLayout.EAST);
+    return panel;
+  }
+
+  private JComponent accountActions() {
+    var signIn = new JButton("Sign in with email…");
+    signIn.addActionListener(event -> SignInDialog.show(this, client, email.getText(), account -> {
+      load();
+      refreshStatus();
+    }));
+    var panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+    panel.add(signIn);
+    panel.add(link("Manage account and credits", JvibeClient.ACCOUNT_URL));
+    if (accounts.usesEnvironmentKey()) {
+      panel.add(new JLabel("  Using the JVIBE_API_KEY environment variable."));
+    }
+    return panel;
+  }
+
+  /** One sub-tab per assistant tab with its custom instructions and run approval setting. */
+  private JComponent modeTabs() {
+    var tabs = new JTabbedPane();
+    for (var mode : Mode.values()) {
+      var text = new JTextArea(5, 48);
+      text.setLineWrap(true);
+      text.setWrapStyleWord(true);
+      instructions.put(mode, text);
+      var panel = new JPanel(new BorderLayout(0, 6));
+      panel.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
+      panel.add(new JLabel("Custom instructions, added to JVibe's built-in " + mode.label() + " instructions"),
+          BorderLayout.NORTH);
+      panel.add(new JScrollPane(text), BorderLayout.CENTER);
+      if (mode.changesState()) {
+        var ask = new JCheckBox("Ask before running commands, edits or SQL that change things");
+        askBeforeRunning.put(mode, ask);
+        panel.add(ask, BorderLayout.SOUTH);
+      }
+      tabs.addTab(mode.label(), panel);
+    }
+    return tabs;
+  }
+
+  private void load() {
+    var account = accounts.account();
+    email.setText(account.email().isBlank() ? "—" : account.email());
+    apiKey.setText(accounts.apiKey());
     try {
-      var secret = chars.length == 0 && !clearKey ? stored.apiKey() : new String(chars);
-      var selectedThinking = (ThinkingOption) thinking.getSelectedItem();
-      var selectedModel = model.getEditor().getItem();
-      return new ProviderSettings("jvibe", JvibeProviderClient.BASE_URL, secret,
-          selectedModel == null ? "" : selectedModel.toString().trim(),
-          selectedThinking == null ? "none" : selectedThinking.id(), true);
-    } finally { java.util.Arrays.fill(chars, '\0'); }
+      var settings = config.config();
+      thinking.setSelectedItem(settings.thinkingLevel());
+      maxToolCalls.setValue(Math.min(500, settings.maxToolIterations()));
+      for (var mode : Mode.values()) {
+        var modeSettings = settings.mode(mode);
+        instructions.get(mode).setText(modeSettings.instructions());
+        if (askBeforeRunning.containsKey(mode)) askBeforeRunning.get(mode).setSelected(modeSettings.askBeforeRunning());
+      }
+    } catch (java.io.IOException e) {
+      saveStatus.setText("Could not read settings: " + e.getMessage());
+    }
   }
 
   private void save() {
     try {
-      var value = draft();
-      if (value.selectedModel().isBlank()) throw new IllegalArgumentException("Choose a model");
-      account.save(value);
-      config.updateConfig(current -> current.withMaxToolIterations((Integer) iterations.getValue())
-          .withCustomInstructions(instructions.getText()));
-      stored = account.settings();
-      key.setText("");
-      clearKey = false;
-      key.putClientProperty("JTextField.placeholderText", stored.apiKey().isBlank() ? "API key or JVIBE_API_KEY" : "Key saved; leave blank to keep");
-      saved.run();
-      status.setText("Saved");
-    } catch (Exception e) { status.setText("Could not save settings: " + e.getMessage()); }
+      var key = new String(apiKey.getPassword()).trim();
+      var account = accounts.account();
+      if (!accounts.usesEnvironmentKey() && !key.equals(account.apiKey())) {
+        accounts.save(key.isBlank() ? Account.NONE : new Account("", key, ""));
+      }
+      var perMode = new EnumMap<Mode, ModeSettings>(Mode.class);
+      for (var mode : Mode.values()) {
+        var ask = askBeforeRunning.get(mode);
+        perMode.put(mode, new ModeSettings(instructions.get(mode).getText().trim(), ask != null && ask.isSelected()));
+      }
+      config.updateConfig(current -> current.withAssistant(
+          (Thinking) thinking.getSelectedItem(), (Integer) maxToolCalls.getValue(), perMode));
+      saveStatus.setText("Saved");
+      load();
+      refreshStatus();
+    } catch (Exception e) {
+      saveStatus.setText("Could not save: " + e.getMessage());
+    }
   }
 
-  private void refresh(JButton button) {
-    var value = draft();
-    button.setEnabled(false);
-    status.setText("Refreshing...");
-    new SwingWorker<AccountResult, Void>() {
-      @Override protected AccountResult doInBackground() {
-        return new AccountResult(account.refreshModels(value), account.credits(value));
+  private void refreshStatus() {
+    status.setText("Checking account…");
+    new SwingWorker<AccountStatus, Void>() {
+      @Override protected AccountStatus doInBackground() {
+        return client.status();
       }
+
       @Override protected void done() {
-        button.setEnabled(true);
         try {
           var result = get();
-          var selected = model.getEditor().getItem();
-          model.setModel(new DefaultComboBoxModel<>(result.models().stream().map(ModelDescriptor::id).toArray(String[]::new)));
-          if (selected != null) model.setSelectedItem(selected);
-          credits.setText(result.credits());
-          status.setText("Account refreshed");
+          status.setText(result.summary());
+          status.setForeground(UIManager.getColor(result.state() == AccountStatus.State.ACTIVE
+              ? "Label.foreground" : "Component.warning.focusedBorderColor"));
+          if (!result.email().isBlank()) email.setText(result.email());
         } catch (Exception e) {
-          status.setText("Account refresh failed");
+          status.setText("Could not check the account");
         }
       }
     }.execute();
   }
 
-  private static void row(JPanel form, int y, String label, Component component) {
+  private JComponent links() {
+    var panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+    panel.add(link("jvibe.net", JvibeClient.SITE_URL));
+    panel.add(link("Discord", "https://discord.gg/TN3nWFBf8H"));
+    panel.add(link("GitHub", "https://github.com/NimChimpsky/jvibe"));
+    return panel;
+  }
+
+  private void heading(JPanel form, String text) {
+    var label = new JLabel(text);
+    label.setFont(label.getFont().deriveFont(Font.BOLD, label.getFont().getSize() + 3f));
     var c = new GridBagConstraints();
-    c.gridx = 0; c.gridy = y; c.anchor = GridBagConstraints.NORTHWEST; c.insets = new Insets(8, 0, 8, 20);
+    c.gridx = 0;
+    c.gridy = row++;
+    c.gridwidth = 2;
+    c.anchor = GridBagConstraints.WEST;
+    c.insets = new Insets(row == 1 ? 0 : 18, 0, 6, 0);
+    form.add(label, c);
+  }
+
+  private void field(JPanel form, String label, Component component) {
+    var c = new GridBagConstraints();
+    c.gridx = 0;
+    c.gridy = row;
+    c.anchor = GridBagConstraints.NORTHWEST;
+    c.insets = new Insets(6, 0, 6, 20);
     form.add(new JLabel(label), c);
-    c.gridx = 1; c.weightx = 1; c.fill = GridBagConstraints.HORIZONTAL; c.insets = new Insets(8, 0, 8, 0);
+    c.gridx = 1;
+    c.gridy = row++;
+    c.weightx = 1;
+    c.fill = GridBagConstraints.HORIZONTAL;
+    c.insets = new Insets(6, 0, 6, 0);
     form.add(component, c);
+  }
+
+  private static JComponent left(JComponent component) {
+    var panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+    panel.add(component);
+    return panel;
   }
 
   private static JButton link(String label, String url) {
@@ -171,6 +290,4 @@ final class JvibeSettingsPanel extends JPanel {
     });
     return button;
   }
-
-  private record AccountResult(List<ModelDescriptor> models, String credits) {}
 }

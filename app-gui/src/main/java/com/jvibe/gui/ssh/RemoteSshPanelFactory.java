@@ -1,10 +1,9 @@
 package com.jvibe.gui.ssh;
 
-import com.jvibe.config.ConfigService;
+import com.jvibe.gui.chat.AttachmentChatPanel;
+import com.jvibe.gui.chat.ChatCallbacks;
 import com.jvibe.gui.chat.ChatPromptRunner;
-import com.jvibe.gui.controller.ModelSelectionController;
 import com.jvibe.session.SessionFactory;
-import com.jvibe.ssh.SshAccessMode;
 import com.jvibe.ssh.SshClientService;
 import com.jvibe.ssh.SshConnection;
 import com.jvibe.ssh.SshConnectionService;
@@ -29,32 +28,27 @@ import javax.swing.border.EmptyBorder;
 
 @Singleton
 public final class RemoteSshPanelFactory {
-  private final ConfigService configService;
   private final SshConnectionService connections;
   private final SshClientService sshClient;
   private final SshCredentialStore credentials;
   private final SessionFactory sessionFactory;
   private final ChatPromptRunner promptRunner;
-  private final ModelSelectionController modelSelectionController;
 
   public RemoteSshPanelFactory(
-      @External ConfigService configService,
       @External SshConnectionService connections,
       @External SshClientService sshClient,
       @External SshCredentialStore credentials,
       @External SessionFactory sessionFactory,
-      ChatPromptRunner promptRunner,
-      ModelSelectionController modelSelectionController) {
-    this.configService = configService;
+      ChatPromptRunner promptRunner) {
     this.connections = connections;
     this.sshClient = sshClient;
     this.credentials = credentials;
     this.sessionFactory = sessionFactory;
     this.promptRunner = promptRunner;
-    this.modelSelectionController = modelSelectionController;
   }
 
-  public JComponent create(Consumer<String> log) {
+  public JComponent create(ChatCallbacks callbacks) {
+    Consumer<String> log = message -> callbacks.log("INFO", message);
     var connectionModel = new SshConnectionTableModel();
     connectionModel.setConnections(connections.connections());
     var connectionTable = new JTable(connectionModel);
@@ -63,8 +57,26 @@ public final class RemoteSshPanelFactory {
     keyList.setEditable(false);
 
     var management = managementPanel(connectionTable, connectionModel, keyList, log);
-    var chat = new RemoteSshChatPanel(configService.paths().tmp(), sessionFactory,
-        connections, modelSelectionController, promptRunner, log);
+    var chat = new AttachmentChatPanel<>(
+        new AttachmentChatPanel.Attachables<>(
+            "Type @ to attach servers, then describe what you need. Example: @web01 @web02 why is disk usage high?",
+            connections::connections,
+            SshConnection::id,
+            SshConnection::name,
+            SshConnection::address),
+        sessionFactory::servers,
+        attached -> true,
+        promptRunner,
+        callbacks);
+    connectionTable.setToolTipText("Double-click a server to attach it to the conversation");
+    connectionTable.addMouseListener(new java.awt.event.MouseAdapter() {
+      @Override public void mouseClicked(java.awt.event.MouseEvent event) {
+        if (event.getClickCount() == 2) {
+          var connection = selected(connectionTable, connectionModel);
+          if (connection != null) chat.attach(connection);
+        }
+      }
+    });
     var split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, management, chat);
     split.setResizeWeight(0.42);
     com.jvibe.gui.layout.SplitPaneSizing.initialProportion(split, 0.42);
@@ -105,7 +117,6 @@ public final class RemoteSshPanelFactory {
     actions.add(button("Delete", event -> deleteConnection(table, model, keyList)));
     actions.add(button("Test", event -> testConnection(table, model, log)));
     actions.add(button("Unlock Key", event -> unlockKey(table, model, keyList)));
-    actions.add(button("Set Access Mode", event -> setAccessMode(table, model)));
     panel.add(actions, BorderLayout.SOUTH);
 
     var content = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, new JScrollPane(table), new JScrollPane(keyList));
@@ -189,31 +200,6 @@ public final class RemoteSshPanelFactory {
         passphrase.setText("");
       }
       keyList.setText(keysText());
-    }
-  }
-
-  private void setAccessMode(JTable table, SshConnectionTableModel model) {
-    var connection = selected(table, model);
-    if (connection == null) return;
-    var mode = (SshAccessMode) JOptionPane.showInputDialog(
-        null,
-        "Access mode",
-        "SSH Access",
-        JOptionPane.PLAIN_MESSAGE,
-        null,
-        SshAccessMode.values(),
-        connection.accessMode());
-    if (mode != null) {
-      if (mode == SshAccessMode.FULL_ACCESS && JOptionPane.showConfirmDialog(
-          table,
-          "Full access allows arbitrary commands on " + connection.name() + ". Continue?",
-          "Enable Full SSH Access",
-          JOptionPane.OK_CANCEL_OPTION,
-          JOptionPane.WARNING_MESSAGE) != JOptionPane.OK_OPTION) {
-        return;
-      }
-      connections.saveAccessMode(connection.id(), mode);
-      model.setConnections(connections.connections());
     }
   }
 

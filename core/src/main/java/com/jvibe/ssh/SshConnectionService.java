@@ -4,7 +4,6 @@ import com.jvibe.config.ConfigService;
 import com.jvibe.config.JvibeConfig;
 import jakarta.inject.Singleton;
 import java.io.IOException;
-import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Optional;
@@ -43,12 +42,6 @@ public final class SshConnectionService {
     saveConfig(connections().stream().filter(connection -> !connection.id().equals(id)).toList(), keys());
   }
 
-  public void saveAccessMode(String id, SshAccessMode mode) {
-    saveConfig(connections().stream()
-        .map(connection -> connection.id().equals(id) ? connection.withAccessMode(mode) : connection)
-        .toList(), keys());
-  }
-
   public void saveTestResult(String id, String result) {
     saveConfig(connections().stream()
         .map(connection -> connection.id().equals(id) ? connection.withLastTestResult(result) : connection)
@@ -65,21 +58,6 @@ public final class SshConnectionService {
     imported.keys().forEach(key -> keys.putIfAbsent(key.id(), key));
     saveConfig(List.copyOf(connections.values()), List.copyOf(keys.values()));
     return new SshConnectionConfig(List.copyOf(connections.values()), List.copyOf(keys.values()));
-  }
-
-  public SshConnection addManual(String name, String host, String user, int port, String keyPath) {
-    var connection = new SshConnection("", name, host, user, port, keyPath, SshAccessMode.READ_ONLY, "");
-    var key = keyPath == null || keyPath.isBlank() ? null : SshKeyRef.of(Path.of(keyPath));
-    var keys = new LinkedHashMap<String, SshKeyRef>();
-    keys().forEach(existing -> keys.put(existing.id(), existing));
-    if (key != null) {
-      keys.putIfAbsent(key.id(), key);
-    }
-    var connections = new LinkedHashMap<String, SshConnection>();
-    connections().forEach(existing -> connections.put(existing.id(), existing));
-    connections.put(connection.id(), connection);
-    saveConfig(List.copyOf(connections.values()), List.copyOf(keys.values()));
-    return connection;
   }
 
   private JvibeConfig config() {
